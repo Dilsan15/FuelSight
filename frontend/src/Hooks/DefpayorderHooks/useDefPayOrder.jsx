@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import defPayAPI from '@/APIs/defpayOrderAPI';
+import defPayAPI from '@/APIs/defpayorderAPI';
 import { useAuthContext } from '@/Hooks/AuthHooks/useAuthContext';
 
 export const useDefPayOrder = () => {
