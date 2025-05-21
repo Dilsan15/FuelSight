@@ -52,16 +52,20 @@ const shiftSchema = new mongoose.Schema({
   ],
 
   readings: [
-    {
-      fuelType: {
-        type: String,
-        enum: ['XG', 'HSD', 'MS'],
-        required: true
-      },
-      opening: { type: Number, required: true },
-      closing: { type: Number, required: true }
-    }
-  ],
+  {
+    fuelType: {
+      type: String,
+      enum: ['XG', 'HSD', 'MS'],
+      required: true
+    },
+    nozzle: {
+      type: Number,
+      required: true
+    },
+    opening: { type: Number, required: true },
+    closing: { type: Number, required: true }
+  }
+],
 
   dayRate: {
     XG: { type: Number},
