@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useCreateUser } from '@/Hooks/AuthHooks/useCreateUser';
 import { useEditUser } from '@/Hooks/AuthHooks/useEditUser';
 import { useUsers } from '@/Hooks/AuthHooks/useUsers';
-import MultiSelect from '@/components/ui/MultiSelect';
+import {MultiSelect} from '@/components/ui/MultiSelect';
 
 const allFuelTypes = ['XG', 'HSD', 'MS'];
 
