@@ -260,27 +260,60 @@ const updateShift = async (req, res) => {
   }
 };
 
+
 // DELETE Shift
 const deleteShift = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const shift = await Shift.findByIdAndDelete(id);
+    const shift = await Shift.findById(id);
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found.' });
     }
 
+    const user = await User.findById(shift.user);
+    if (!user) {
+      return res.status(404).json({ error: 'Associated user not found.' });
+    }
+
+    // Subtract fuel usage from user's readings
+    if (Array.isArray(shift.readings)) {
+      for (const reading of shift.readings) {
+        const { fuelType, opening, closing } = reading;
+        const nozzle = reading.nozzle ?? null;
+
+        const change = parseFloat(closing) - parseFloat(opening);
+
+        const userReading = user.readings.find(
+          r => r.fuelType === fuelType && (r.nozzle === nozzle || nozzle === null)
+        );
+
+        if (userReading) {
+          userReading.closing -= change;
+          if (userReading.closing < 0) userReading.closing = 0; // Prevent negative
+        }
+      }
+    }
+
+    await user.save();
+
+    // Delete the shift
+    await Shift.findByIdAndDelete(id);
+
+    // Unlink any associated def/pay orders
     await DefPayOrder.updateMany(
       { shiftId: id },
       { $unset: { shiftId: "" } }
     );
 
-    res.status(200).json({ message: '✅ Shift deleted and all linked orders unlinked.' });
+    res.status(200).json({ message: '✅ Shift deleted and user readings updated. Orders unlinked.' });
+
   } catch (error) {
     console.error('❌ Shift deletion error:', error);
     res.status(500).json({ error: 'Server error deleting shift.' });
   }
 };
+
 
 // GET Shifts
 const getShifts = async (req, res) => {
