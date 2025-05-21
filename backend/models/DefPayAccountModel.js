@@ -33,7 +33,7 @@ const defPayAccountSchema = new mongoose.Schema({
     required: true
   },
 
-  totalOutstanding: {
+  balance: {
     type: Number,
     default: 0
   },

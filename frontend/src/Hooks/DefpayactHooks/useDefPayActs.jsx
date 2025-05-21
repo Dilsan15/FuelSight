@@ -1,14 +1,21 @@
-// --- Hook: useDefPayActs.js ---
-import defPayAPI from '@/APIs/defpayactAPI';
-import { useAuthContext } from '../AuthHooks/useAuthContext';
+import { useAuthContext } from "../AuthHooks/useAuthContext";
+import defPayAPI from "@/APIs/defpayactAPI"
+
 
 export const useDefPayActs = () => {
   const { user } = useAuthContext();
 
-  const fetchAccounts = async (search = '', page = 1, limit = 10, searchBy = 'all') => {
+  const fetchAccounts = async (
+    search = '',
+    page = 1,
+    limit = 10,
+    searchBy = 'all',
+    sortBy = 'createdAt',
+    order = 'desc'
+  ) => {
     try {
       const res = await defPayAPI.get('/search', {
-        params: { search, page, limit, searchBy },
+        params: { search, page, limit, searchBy, sortBy, order },
         headers: {
           Authorization: `Bearer ${user.token}`
         }

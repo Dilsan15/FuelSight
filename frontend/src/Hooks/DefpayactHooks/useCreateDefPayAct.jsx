@@ -6,7 +6,7 @@ export const useCreateDefPayAct = () => {
   const {user} = useAuthContext();
   const createAccount = async (data) => {
     try {
-      const res = await defPayAPI.post('/', data, {
+      const res = await defPayAPI.post('/create', data, {
         headers: {
           Authorization: `Bearer ${user?.token}` // use optional chaining to be safe
         }

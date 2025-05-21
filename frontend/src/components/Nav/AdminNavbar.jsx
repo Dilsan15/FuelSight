@@ -8,7 +8,6 @@ const AdminNavbar = () => {
   const navigate = useNavigate(); // ✅ initialize navigation
 
   const navItems = [
-    { label: 'Dashboard', path: '/admin-dashboard' },
     { label: 'Shifts', path: '/admin-shifts' },
     { label: 'Orders', path: '/admin-orders' },
     { label: 'Accounts', path: '/admin-accounts' },

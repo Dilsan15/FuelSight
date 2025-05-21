@@ -11,7 +11,7 @@ export const useUpdateDefPayOrder = () => {
     setIsUpdating(true);
     setError(null);
     try {
-      const res = await defPayAPI.patch(`/api/defpayorder/${id}`, updates, {
+      const res = await defPayAPI.patch(`/${id}`, updates, {
         headers: {
           Authorization: `Bearer ${user?.token}`
         }

@@ -21,6 +21,7 @@ const defPayOrderSchema = new mongoose.Schema({
     required: true
   },
 
+
   description: {
     type: String,
     default: ''
@@ -48,6 +49,11 @@ const defPayOrderSchema = new mongoose.Schema({
     ref: 'Shift'
   },
 
+  orderDate: {
+    type: Date,
+    required: true
+  },
+
   dueDate: {
     type: Date,
     required: function () {
@@ -55,14 +61,6 @@ const defPayOrderSchema = new mongoose.Schema({
     },
     default: function () {
       return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
-    }
-  },
-
-  status: {
-    type: String,
-    enum: ['unpaid', 'partial', 'paid'],
-    required: function () {
-      return this.type === 'deferal'  ;
     }
   },
 
@@ -91,4 +89,18 @@ const defPayOrderSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
+
+defPayOrderSchema.pre('validate', function (next) {
+  if (this.type !== 'deferal') {
+    this.amountPaid = undefined;
+    this.status = undefined
+    this.quantity = undefined
+    this.fuelType = undefined
+    this.dueDate = undefined
+  }
+  next();
+});
+
 module.exports = mongoose.model('DefPayOrder', defPayOrderSchema);
+
+

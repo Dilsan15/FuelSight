@@ -31,17 +31,26 @@ const AdminPayDefActPage = () => {
 
   const [search, setSearch] = useState("");
   const [searchBy, setSearchBy] = useState("all");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [order, setOrder] = useState("desc");
+
   const [page, setPage] = useState(1);
   const [allAccounts, setAllAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Fetch everything ONCE
   useEffect(() => {
     const loadAllAccounts = async () => {
       setLoading(true);
       try {
-        const { data } = await fetchAccounts("", 1, 1000, "all"); // big fetch
+        const { data } = await fetchAccounts(
+          search,
+          1,
+          1000,
+          searchBy,
+          sortBy,
+          order
+        );
         setAllAccounts(data || []);
       } catch (err) {
         setError(err.error || "Failed to load accounts.");
@@ -50,20 +59,17 @@ const AdminPayDefActPage = () => {
       }
     };
     loadAllAccounts();
-  }, []);
+  }, [search, searchBy, sortBy, order]);
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
     setPage(1);
   };
 
-  const handleSearchByChange = (val) => {
-    setSearchBy(val);
-    setPage(1);
-  };
-
   const handleDelete = async (id) => {
-    const confirmed = window.confirm("Are you sure you want to delete this account?");
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this account?"
+    );
     if (!confirmed) return;
     try {
       await deleteAccount(id);
@@ -73,7 +79,6 @@ const AdminPayDefActPage = () => {
     }
   };
 
-  // Filtered list
   const filteredAccounts = allAccounts.filter((acc) => {
     const term = search.toLowerCase();
     if (searchBy === "all") {
@@ -91,17 +96,20 @@ const AdminPayDefActPage = () => {
     }
   });
 
-  // Paginated display
   const startIndex = (page - 1) * ITEMS_PER_PAGE;
-  const paginatedAccounts = filteredAccounts.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  const paginatedAccounts = filteredAccounts.slice(
+    startIndex,
+    startIndex + ITEMS_PER_PAGE
+  );
   const totalPages = Math.ceil(filteredAccounts.length / ITEMS_PER_PAGE);
 
   return (
     <div className="p-8 bg-muted min-h-screen space-y-6">
-      <div className="flex justify-between items-end gap-4">
+      <div className="flex justify-between items-end gap-4 flex-wrap">
         <div className="space-y-2">
           <Card>
-            <CardContent className="pt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <CardContent className="pt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 flex-wrap">
+              {/* Search input */}
               <div className="relative w-full max-w-md">
                 <Input
                   placeholder="Search..."
@@ -110,7 +118,15 @@ const AdminPayDefActPage = () => {
                   className="pr-8"
                 />
               </div>
-              <Select value={searchBy} onValueChange={handleSearchByChange}>
+
+              {/* Search By */}
+              <Select
+                value={searchBy}
+                onValueChange={(val) => {
+                  setSearchBy(val);
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Search by..." />
                 </SelectTrigger>
@@ -122,11 +138,49 @@ const AdminPayDefActPage = () => {
                   <SelectItem value="address">Address</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Sort By */}
+              <Select
+                value={sortBy}
+                onValueChange={(val) => {
+                  setSortBy(val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Sort by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="createdAt">Date Created</SelectItem>
+                  <SelectItem value="totalOutstanding">
+                    Balance
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Order */}
+              <Select
+                value={order}
+                onValueChange={(val) => {
+                  setOrder(val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Order" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
             </CardContent>
           </Card>
         </div>
 
-        <Button onClick={() => navigate("/create-defpayact")}>+ Add Account</Button>
+        <Button onClick={() => navigate("/create-defpayact")}>
+          + Add Account
+        </Button>
       </div>
 
       <Card>
@@ -157,19 +211,27 @@ const AdminPayDefActPage = () => {
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Address</TableHead>
-                  <TableHead className="text-right">Outstanding</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedAccounts.map((acc) => (
                   <TableRow key={acc._id}>
-                    <TableCell className="font-mono">{acc.code}</TableCell>
-                    <TableCell>{acc.firstName} {acc.lastName}</TableCell>
+                    <TableCell
+                      className="font-mono text-blue-600 cursor-pointer hover:underline"
+                      onClick={() => navigate(`/account-summary/${acc._id}`)}
+                    >
+                      {acc.code}
+                    </TableCell>
+
+                    <TableCell>
+                      {acc.firstName} {acc.lastName}
+                    </TableCell>
                     <TableCell>{acc.phoneNumber}</TableCell>
                     <TableCell>{acc.address}</TableCell>
                     <TableCell className="text-right font-semibold">
-                      ₹{acc.totalOutstanding.toFixed(2)}
+                      ₹{acc.balance?.toFixed(2) || "0.00"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -206,7 +268,9 @@ const AdminPayDefActPage = () => {
           >
             Previous
           </Button>
-          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
           <Button
             onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
             disabled={page >= totalPages}

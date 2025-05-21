@@ -17,6 +17,10 @@ import AdminOrdersPage from "../Admin/AdminOrdersPage";
 import AdminShiftsPage from "../Admin/AdminShiftsPage";
 import AdminCreateOrderForm from "../../components/Forms/AdminCreateOrderForm";
 import AdminDefPayForm from "../../components/Forms/DefPayForm";
+import AdminEditShiftPage from "../../components/Forms/AdminEditShiftPage";
+import AdminAccountSummaryPage from "../Admin/AdminAccountSummaryPage";
+import AdminOrderSummaryPage from "../Admin/AdminOrderSummaryPage";
+import AdminShiftSummaryPage from "../Admin/AdminShiftSummaryPage";
 
 
 function App() {
@@ -36,7 +40,6 @@ function App() {
         </Route>
 
         <Route element={<AdminProtectedRoute />}>
-          <Route path="/admin-dashboard" element={<AdminDashboard />} />
           <Route path="/admin-day-rate" element={<AdminDayRate />} />
           <Route path="/admin-users" element={<AdminUsersPage />} />
           <Route path="/create-user" element={<CreateUserPage />} />
@@ -51,6 +54,14 @@ function App() {
 
           <Route path="/create-orders" element={<AdminDefPayForm />} />
           <Route path="/admin-shifts" element={<AdminShiftsPage />} />
+          
+          <Route path="/edit-shift/:id" element={<AdminEditShiftPage/>}/>
+          <Route path="/account-summary/:id" element={<AdminAccountSummaryPage />} />
+          <Route path="/order-summary/:id" element={<AdminOrderSummaryPage/>}/>
+          <Route path ="/shift-summary/:id" element={<AdminShiftSummaryPage />}/>
+
+
+
         </Route>
       </Routes>
     </>

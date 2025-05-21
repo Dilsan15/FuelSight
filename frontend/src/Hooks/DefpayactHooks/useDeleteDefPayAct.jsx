@@ -1,11 +1,13 @@
-import defPayAPI from '@/APIs/defpayactAPI';
+import defPayAPI from "@/APIs/defpayactAPI"
+import { useAuthContext } from '../AuthHooks/useAuthContext';
 
 export const useDeleteDefPayAct = () => {
+  const {user} = useAuthContext()
   const deleteAccount = async (id) => {
     try {
-      const res = await defPayAPI.delete(`/${id}`,{
+      const res = await defPayAPI.delete(`/delete/${id}`,{
         headers: {
-          Authorization: token ? `Bearer ${user.token}` : undefined
+          Authorization: `Bearer ${user?.token}`
         }}
       );
       return res.data;

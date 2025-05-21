@@ -138,11 +138,11 @@ const updateDefPayAccount = async (req, res) => {
       }));
     }
 
-    if (updates.totalOutstanding !== undefined) {
-      if (typeof updates.totalOutstanding !== 'number' || updates.totalOutstanding < 0) {
-        return res.status(400).json({ error: 'Invalid totalOutstanding value.' });
+    if (updates.balance !== undefined) {
+      if (typeof updates.balance !== 'number' || updates.balance < 0) {
+        return res.status(400).json({ error: 'Invalid balance value.' });
       }
-      account.totalOutstanding = updates.totalOutstanding;
+      account.balance = updates.balance;
     }
 
     await account.save();
@@ -165,70 +165,60 @@ const deleteDefPayAccount = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete account.' });
   }
 };
-
 const getDefPayAccount = async (req, res) => {
-  const { id } = req.params;
-
   try {
-    const account = await DefPayAccount.findById(id).populate('paymentHistory.defPayOrder');
-    if (!account) return res.status(404).json({ error: 'Account not found.' });
+    const account = await DefPayAccount.findById(req.params.id)
+      .populate('paymentHistory.defPayOrder'); // 👈 This is essential
+    if (!account) return res.status(404).json({ error: "Account not found" });
 
     res.status(200).json(account);
   } catch (err) {
-    console.error('Fetch single account error:', err);
-    res.status(500).json({ error: 'Failed to fetch account.' });
+    console.error(err);
+    res.status(500).json({ error: "Server error fetching account" });
   }
 };
 
-// --- Backend Controller Update ---
+
 const getDefPayAccounts = async (req, res) => {
-  const { page = 1, limit = 10, search = '', searchBy = 'all' } = req.query;
+  const { page = 1, limit = 10, search = '', searchBy = 'all', sortBy = 'createdAt', order = 'desc' } = req.query;
   let query = {};
 
   const trimmedSearch = search.trim();
 
   const fields = (() => {
     switch (searchBy) {
-      case 'name':
-        return ['firstName', 'lastName'];
-      case 'code':
-        return ['code'];
-      case 'phone':
-        return ['phoneNumber'];
-      case 'address':
-        return ['address'];
+      case 'name': return ['firstName', 'lastName'];
+      case 'code': return ['code'];
+      case 'phone': return ['phoneNumber'];
+      case 'address': return ['address'];
       case 'all':
-      default:
-        return ['firstName', 'lastName', 'code', 'phoneNumber', 'address'];
+      default: return ['firstName', 'lastName', 'code', 'phoneNumber', 'address'];
     }
   })();
 
   if (trimmedSearch) {
     const words = trimmedSearch.split(/\s+/).filter(Boolean);
-
     if (words.length === 1) {
       const regex = new RegExp(words[0], 'i');
-      query = {
-        $or: fields.map(field => ({ [field]: regex }))
-      };
+      query = { $or: fields.map(field => ({ [field]: regex })) };
     } else {
-      // Match EACH word somewhere (in any field), more user-friendly
       query = {
         $and: words.map(word => {
           const regex = new RegExp(word, 'i');
-          return {
-            $or: fields.map(field => ({ [field]: regex }))
-          };
+          return { $or: fields.map(field => ({ [field]: regex })) };
         })
       };
     }
   }
 
+  const sortField = ['balance', 'createdAt'].includes(sortBy) ? sortBy : 'createdAt';
+  const sortOrder = order === 'asc' ? 1 : -1;
+
   try {
     const total = await DefPayAccount.countDocuments(query);
     const accounts = await DefPayAccount.find(query)
       .populate('paymentHistory.defPayOrder')
-      .sort({ createdAt: -1 })
+      .sort({ [sortField]: sortOrder })
       .skip((page - 1) * limit)
       .limit(Number(limit));
 
@@ -245,8 +235,6 @@ const getDefPayAccounts = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch accounts.' });
   }
 };
-
-
 
 module.exports = {
   createDefPayAccount,

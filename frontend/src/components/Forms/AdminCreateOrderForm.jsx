@@ -153,7 +153,7 @@ const AdminCreateOrderForm = () => {
         amount,
         quantity:
           form.type === "deferal" ? Number(form.quantity || 0) : undefined,
-        user: user._id,
+        user: form.userId,
         submittedByName: user.username,
       };
 

@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* tailwind.css or index.css */
+body {
+  @apply bg-muted;
+}
+
+
 @layer base {
   :root {
     --background: 265 30% 96%;

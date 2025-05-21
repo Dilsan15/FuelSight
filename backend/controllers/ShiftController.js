@@ -1,7 +1,6 @@
 const Shift = require('../models/ShiftModel');
 const DefPayOrder = require('../models/DefPayOrderModel');
 const DefPayAccount = require('../models/DefPayAccountModel');
-
 const User = require("../models/UserModel");
 
 const getDefaultDueDate = () => {
@@ -9,14 +8,9 @@ const getDefaultDueDate = () => {
 };
 
 // SUBMIT Shift
-
-
 const submitShift = async (req, res) => {
-  console.log("🔻 Incoming Shift Submission:\n", JSON.stringify(req.body, null, 2));
-
   try {
     const { shift = {}, deferals = [], payments = [] } = req.body;
-
     const {
       submittedByName,
       timeType,
@@ -24,7 +18,8 @@ const submitShift = async (req, res) => {
       readings = [],
       dayRate = {},
       lubeSales = [],
-      thrownOutFuel = []
+      thrownOutFuel = [],
+      date
     } = shift;
 
     if (!submittedByName || !timeType) {
@@ -50,26 +45,26 @@ const submitShift = async (req, res) => {
     let fuelRevenue = 0;
     for (const [fuelType, entries] of Object.entries(groupedReadings)) {
       const rate = parseFloat(dayRate[fuelType] || 0);
-      const totalVolume = entries.reduce((sum, r) => {
-        return sum + (parseFloat(r.closing || 0) - parseFloat(r.opening || 0));
-      }, 0);
-      const thrown = thrownMap[fuelType] || 0;
-      const netVolume = totalVolume - thrown;
+      const totalVolume = entries.reduce((sum, r) =>
+        sum + (parseFloat(r.closing || 0) - parseFloat(r.opening || 0)), 0);
+      const netVolume = totalVolume - (thrownMap[fuelType] || 0);
       fuelRevenue += netVolume * rate;
     }
 
     const lubeRevenue = lubeSales.reduce(
-      (sum, l) => sum + parseFloat(l.amount || 0),
-      0
-    );
-
+      (sum, l) => sum + parseFloat(l.amount || 0), 0);
     const lost = parseFloat(sanitizedSales.lost || 0);
     const total = fuelRevenue + lubeRevenue - lost;
+
+    const shiftDateParsed = Date.parse(date);
+    const shiftDate = isNaN(shiftDateParsed) ? new Date() : new Date(shiftDateParsed);
+    const shiftDateISO = shiftDate.toISOString().split("T")[0];
 
     const shiftDoc = await Shift.create({
       user: req.user._id,
       submittedByName,
       timeType,
+      shiftDateSubmitted: shiftDate,
       sales: sanitizedSales,
       readings,
       dayRate,
@@ -80,7 +75,6 @@ const submitShift = async (req, res) => {
 
     const accountMap = {};
 
-    // === Deferals
     for (const d of deferals) {
       if (!accountMap[d.code]) {
         const found = await DefPayAccount.findOne({ code: d.code });
@@ -112,28 +106,22 @@ const submitShift = async (req, res) => {
         shiftId: shiftDoc._id,
         defPayAccount: account._id,
         dueDate: d.dueDate || getDefaultDueDate(),
-        status: 'unpaid'
+        orderDate: shiftDate,
       });
 
       shiftDoc.deferrals.push(deferalOrder._id);
+      shiftDoc.sales.deferralTotal = (shiftDoc.sales.deferralTotal || 0) + amount;
 
-      await DefPayAccount.updateOne(
-        { _id: account._id },
-        {
-          $inc: { totalOutstanding: -amount },
-          $push: {
-            paymentHistory: {
-              amount: -amount,
-              date: new Date(),
-              defPayOrder: deferalOrder._id
-            }
-          }
-        },
-        { writeConcern: { w: "majority", j: true } }
-      );
+      account.balance -= amount;
+      account.paymentHistory.push({
+        amount: -amount,
+        date: new Date(),
+        defPayOrder: deferalOrder._id
+      });
+
+      await account.save();
     }
 
-    // === Payments
     for (const p of payments) {
       if (!accountMap[p.code]) {
         const found = await DefPayAccount.findOne({ code: p.code });
@@ -158,41 +146,28 @@ const submitShift = async (req, res) => {
         user: req.user._id,
         shiftId: shiftDoc._id,
         defPayAccount: account._id,
-        paymentType: p.paymentType
+        paymentType: p.paymentType,
+        orderDate: shiftDate,
       });
 
-      account.totalOutstanding += paymentAmount;
-      account.markModified("totalOutstanding");
+      shiftDoc.payments.push(paymentOrder._id);
+      shiftDoc.sales.advancePaymentTotal = (shiftDoc.sales.advancePaymentTotal || 0) + paymentAmount;
 
-      account.paymentHistory = account.paymentHistory || [];
+      account.balance += paymentAmount;
       account.paymentHistory.push({
         amount: paymentAmount,
         date: new Date(),
         defPayOrder: paymentOrder._id
       });
 
-      account.markModified("paymentHistory");
-
-      try {
-        await account.save();
-        console.log(`✅ Account ${account.code} saved successfully.`);
-      } catch (err) {
-        console.error(`❌ Failed to save account ${account.code}:`, err);
-      }
-
-      shiftDoc.payments.push(paymentOrder._id);
+      await account.save();
     }
 
-    // === Update user's stored readings to latest closing values
     const userDoc = await User.findById(req.user._id);
     if (userDoc) {
       const updated = userDoc.readings || [];
-
       for (const reading of readings) {
-        const idx = updated.findIndex(
-          (r) => r.fuelType === reading.fuelType && r.nozzle === reading.nozzle
-        );
-
+        const idx = updated.findIndex(r => r.fuelType === reading.fuelType && r.nozzle === reading.nozzle);
         if (idx !== -1) {
           updated[idx].closing = parseFloat(reading.closing || 0);
         } else {
@@ -203,13 +178,50 @@ const submitShift = async (req, res) => {
           });
         }
       }
-
       userDoc.readings = updated;
       await userDoc.save();
     }
 
+    // 🔗 Link unlinked past orders for same user and date
+    const updatedOrders = await DefPayOrder.updateMany(
+      {
+        user: req.user._id,
+        shiftId: { $exists: false },
+        $expr: {
+          $eq: [
+            { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } },
+            shiftDateISO
+          ]
+        }
+      },
+      { $set: { shiftId: shiftDoc._id } }
+    );
+
+    // Fetch those orders
+    const linkedOrders = await DefPayOrder.find({
+      user: req.user._id,
+      shiftId: shiftDoc._id,
+      $expr: {
+        $eq: [
+          { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } },
+          shiftDateISO
+        ]
+      }
+    });
+
+    for (const order of linkedOrders) {
+      const key = order.type === 'payment' ? 'payments' : 'deferrals';
+      const salesKey = order.type === 'payment' ? 'advancePaymentTotal' : 'deferralTotal';
+
+      if (!shiftDoc[key].some(id => id.toString() === order._id.toString())) {
+        shiftDoc[key].push(order._id);
+        shiftDoc.sales[salesKey] = (shiftDoc.sales[salesKey] || 0) + order.amount;
+      }
+    }
 
     await shiftDoc.save();
+
+    console.log(`🔗 Linked ${updatedOrders.modifiedCount} unlinked orders to shift ${shiftDoc._id}`);
 
     res.status(201).json({
       message: '✅ Shift and related deferals/payments submitted successfully.',
@@ -221,8 +233,6 @@ const submitShift = async (req, res) => {
     res.status(500).json({ error: 'Server error submitting shift.' });
   }
 };
-
-
 
 // UPDATE Shift
 const updateShift = async (req, res) => {
@@ -238,6 +248,8 @@ const updateShift = async (req, res) => {
     if (sales) shift.sales = sales;
     if (readings) shift.readings = readings;
     if (dayRate) shift.dayRate = dayRate;
+    if (req.body.lubeSales) shift.lubeSales = req.body.lubeSales;
+    if (req.body.thrownOutFuel) shift.thrownOutFuel = req.body.thrownOutFuel;
 
     await shift.save();
     res.status(200).json({ message: '✅ Shift updated successfully.', shift });
@@ -258,9 +270,12 @@ const deleteShift = async (req, res) => {
       return res.status(404).json({ error: 'Shift not found.' });
     }
 
-    await DefPayOrder.deleteMany({ shiftId: id });
+    await DefPayOrder.updateMany(
+      { shiftId: id },
+      { $unset: { shiftId: "" } }
+    );
 
-    res.status(200).json({ message: '✅ Shift and its deferals deleted.' });
+    res.status(200).json({ message: '✅ Shift deleted and all linked orders unlinked.' });
   } catch (error) {
     console.error('❌ Shift deletion error:', error);
     res.status(500).json({ error: 'Server error deleting shift.' });
@@ -275,14 +290,14 @@ const getShifts = async (req, res) => {
 
   const filter = {};
   if (start || end) {
-    filter.createdAt = {};
-    if (start) filter.createdAt.$gte = new Date(start);
-    if (end) filter.createdAt.$lte = new Date(end);
+    filter.shiftDateSubmitted = {};
+    if (start) filter.shiftDateSubmitted.$gte = new Date(start);
+    if (end) filter.shiftDateSubmitted.$lte = new Date(end);
   }
 
   try {
     const shifts = await Shift.find(filter)
-      .sort({ createdAt: -1 })
+      .sort({ shiftDateSubmitted: -1 })
       .skip(skip)
       .limit(limit)
       .populate('user', 'username stationName');
@@ -300,9 +315,31 @@ const getShifts = async (req, res) => {
   }
 };
 
+// GET Single Shift
+const getShift = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const shift = await Shift.findById(id)
+      .populate('user', 'username stationName')
+      .populate('deferrals')
+      .populate('payments');
+
+    if (!shift) {
+      return res.status(404).json({ error: 'Shift not found.' });
+    }
+
+    res.status(200).json(shift);
+  } catch (error) {
+    console.error('❌ Error fetching shift by ID:', error);
+    res.status(500).json({ error: 'Failed to fetch shift.' });
+  }
+};
+
 module.exports = {
   submitShift,
   updateShift,
   deleteShift,
-  getShifts
+  getShifts,
+  getShift
 };

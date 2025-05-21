@@ -20,7 +20,6 @@ const shiftSchema = new mongoose.Schema({
 
   shiftDateSubmitted: {
     type: Date,
-    default: Date.now
   },
 
   sales: {

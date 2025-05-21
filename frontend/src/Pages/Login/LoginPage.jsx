@@ -11,7 +11,7 @@ export default function Login() {
   useEffect(() => {
     if (user) {
       if (user.role === 'admin') {
-        navigate('/admin-dashboard', { replace: true });
+        navigate('/admin-shifts', { replace: true });
       } else if (user.role === 'worker') {
         navigate('/submit-shift', { replace: true });
       }

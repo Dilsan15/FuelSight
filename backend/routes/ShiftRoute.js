@@ -5,7 +5,8 @@ const {
   submitShift,
   updateShift,
   deleteShift,
-  getShifts
+  getShifts,
+  getShift
 } = require('../controllers/ShiftController');
 
 const requireAdmin = require('../middleware/RequireAdmin')
@@ -18,7 +19,8 @@ router.post('/submit', submitShift);
 router.use(requireAuth)
 router.use(requireAdmin)
 
-router.put('/update/:id', updateShift);
+router.patch('/update/:id', updateShift);
 router.delete('/delete/:id', deleteShift);
 router.get('/search', getShifts);     // Get with pagination and/or date filters
+router.get('/:id', getShift)
 module.exports = router;

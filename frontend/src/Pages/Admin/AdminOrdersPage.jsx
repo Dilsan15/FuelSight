@@ -17,6 +17,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDefPayOrders } from "@/Hooks/DefpayorderHooks/useDefPayOrders";
@@ -189,7 +190,7 @@ const AdminOrdersPage = () => {
                 <TableHead className="px-4 py-2">Qty (L)</TableHead>
                 <TableHead className="px-4 py-2">Amount</TableHead>
                 <TableHead className="px-4 py-2">Due Date</TableHead>
-                <TableHead className="px-4 py-2">Status</TableHead>
+                <TableHead className="px-4 py-2">Station</TableHead>
               </>
             ) : (
               <>
@@ -215,7 +216,8 @@ const AdminOrdersPage = () => {
             : orders.map((order, i) => (
                 <TableRow
                   key={`${order._id}-${i}`}
-                  className="hover:bg-gray-50"
+                  className="hover:bg-gray-100 cursor-pointer"
+                  onClick={() => navigate(`/order-summary/${order._id}`)}
                 >
                   <TableCell className="px-4 py-3">{order.code}</TableCell>
                   <TableCell className="px-4 py-3">{order.actName}</TableCell>
@@ -233,9 +235,7 @@ const AdminOrdersPage = () => {
                       <TableCell className="px-4 py-3">
                         {new Date(order.dueDate).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="px-4 py-3">
-                        {order.status}
-                      </TableCell>
+                      <TableCell>{order.user?.stationName || "N/A"}</TableCell>
                     </>
                   ) : (
                     <>
@@ -251,11 +251,17 @@ const AdminOrdersPage = () => {
                     {order.submittedByName}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
+                    <div
+                      className="flex justify-end gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => navigate(`/edit-order/${order._id}`)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/edit-order/${order._id}`);
+                        }}
                       >
                         Edit
                       </Button>
@@ -263,7 +269,8 @@ const AdminOrdersPage = () => {
                         size="sm"
                         variant="destructive"
                         disabled={isDeleting}
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          e.stopPropagation();
                           const confirm = window.confirm("Are you sure?");
                           if (!confirm) return;
                           await deleteOrder(order._id);
@@ -293,25 +300,29 @@ const AdminOrdersPage = () => {
           onValueChange={handleTabChange}
           className="space-y-6"
         >
-          <div className="flex flex-wrap md:flex-row items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <Input
-                placeholder="Search by code, name, or submitter..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-[240px]"
-              />
-              {renderFilters()}
-            </div>
-            <Button onClick={() => navigate("/create-orders")}>
-              + Create New Order
-            </Button>
-          </div>
+          <Card>
+            <CardContent className="pt-6 pb-4 space-y-4">
+              <div className="flex flex-wrap md:flex-row items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  <Input
+                    placeholder="Search by code, name, or submitter..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-[240px]"
+                  />
+                  {renderFilters()}
+                </div>
+                <Button onClick={() => navigate("/create-order")}>
+                  + Create New Order
+                </Button>
+              </div>
 
-          <TabsList className="w-full justify-start">
-            <TabsTrigger value="deferal">Deferals</TabsTrigger>
-            <TabsTrigger value="payment">Payments</TabsTrigger>
-          </TabsList>
+              <TabsList className="w-full justify-start">
+                <TabsTrigger value="deferal">Deferals</TabsTrigger>
+                <TabsTrigger value="payment">Payments</TabsTrigger>
+              </TabsList>
+            </CardContent>
+          </Card>
 
           <TabsContent value="deferal">
             {renderTable("deferal")}
