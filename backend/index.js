@@ -16,6 +16,12 @@ const defPayOrderRoutes = require('./routes/DefPayOrderRoute');
 const app = express();
 const PORT = process.env.PORT || 5001; // Added fallback port
 
+// Rate limiting configuration
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again after 15 minutes'
+});
 
 // Apply rate limiter to authentication routes
 app.use('/api/auth', limiter);
