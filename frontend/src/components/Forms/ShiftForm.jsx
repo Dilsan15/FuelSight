@@ -11,6 +11,12 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
+import { formatINR } from "@/utils/formatting.js";
+import {
+  getSafePositive,
+  enforceOneIfEmptyOrZero,
+} from "@/utils/handleSafeInput.js";
+
 const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
   const fuelTypes = (formData.readings || [])
     .map((r) => r.fuelType)
@@ -41,7 +47,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
   const handleReadingChange = (fuelType, nozzle, field, value) => {
     const updated = formData.readings.map((r) =>
       r.fuelType === fuelType && r.nozzle === nozzle
-        ? { ...r, [field]: value }
+        ? { ...r, [field]: getSafePositive(value) }
         : r
     );
     setFormData({ readings: updated });
@@ -67,18 +73,18 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
   };
 
   return (
-    <Card className="p-6 space-y-6 bg-gradient-to-br from-[#fefefe] to-[#f5f5f5] border border-gray-300 shadow-xl rounded-xl">
-      <CardContent className="space-y-8">
+    <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
+      <CardContent className="p-8 space-y-10">
         <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
           Shift Details
         </h2>
 
         {/* Shift Info */}
-        <section className="border border-gray-200 bg-white rounded-lg p-6 shadow-md space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
+        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="space-y-3">
               <Label className="text-sm font-semibold text-gray-700">
-                Worker Name * 
+                Worker Name *
               </Label>
               <Input
                 name="submittedByName"
@@ -86,10 +92,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                 onChange={(e) =>
                   setFormData({ submittedByName: e.target.value })
                 }
-                className="bg-gray-50 border-gray-300"
+                className="bg-gray-50 border-gray-300 h-11"
               />
             </div>
-            <div>
+            <div className="space-y-3">
               <Label className="text-sm font-semibold text-gray-700">
                 Shift Date *
               </Label>
@@ -98,10 +104,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                 name="date"
                 value={formData.date || ""}
                 onChange={handleChange}
-                className="bg-gray-50 border-gray-300"
+                className="bg-gray-50 border-gray-300 h-11"
               />
             </div>
-            <div>
+            <div className="space-y-3">
               <Label className="text-sm font-semibold text-gray-700">
                 Shift Time *
               </Label>
@@ -109,7 +115,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                 value={formData.timeType || ""}
                 onValueChange={(value) => setFormData({ timeType: value })}
               >
-                <SelectTrigger className="bg-gray-50 border border-gray-300">
+                <SelectTrigger className="bg-gray-50 border-gray-300 h-11">
                   <SelectValue placeholder="Select shift time" />
                 </SelectTrigger>
                 <SelectContent>
@@ -122,50 +128,53 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
         </section>
 
         {/* Day Rates */}
-        <section className="border border-gray-200 bg-white rounded-lg p-6 shadow-md space-y-6">
-          <h3 className="text-xl font-semibold text-gray-900">
-            Applicable Day Rates (₹ per Litre)
+        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
+          <h3 className="text-2xl font-bold text-gray-900">
+            Applicable Day Rates (₹/L)
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[...new Set((formData.readings || []).map((r) => r.fuelType))].map(
-              (fuel) => (
-                <div key={fuel}>
-                  <Label className="text-sm font-semibold text-gray-700">
-                    {fuel}
-                  </Label>
-                  <Input
-                    value={formData.dayRate?.[fuel] ?? "N/A"}
-                    readOnly
-                    className="bg-gray-100 border border-gray-300 text-gray-600 cursor-not-allowed"
-                  />
-                </div>
-              )
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {fuelTypes.map((fuel) => (
+              <div key={fuel} className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">
+                  {fuel} (₹/L)
+                </Label>
+                <Input
+                  value={formData.dayRate?.[fuel] ?? "N/A"}
+                  readOnly
+                  className="bg-gray-100 border-gray-300 text-gray-600 cursor-not-allowed h-11"
+                />
+              </div>
+            ))}
           </div>
         </section>
 
         {/* Thrown Out Fuel */}
-        <section className="border border-gray-200 bg-white rounded-lg p-6 shadow-md space-y-6">
-          <h3 className="text-xl font-semibold text-gray-900">
-            Fuel Thrown Out (Calibration) *
+        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
+          <h3 className="text-2xl font-bold text-gray-900">
+            Fuel Thrown Out (Calibration)
           </h3>
           {fuelTypes.map((fuel) => (
             <div
               key={fuel}
-              className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-100 p-4 rounded-md"
+              className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-gray-50 p-6 rounded-xl border border-gray-200"
             >
-              <div>
-                <Label>Fuel Type *</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Fuel Type *
+                </Label>
                 <Input
                   value={fuel}
                   readOnly
-                  className="bg-gray-100 border border-gray-300 text-gray-600 cursor-not-allowed"
+                  className="bg-gray-100 border-gray-300 text-gray-600 cursor-not-allowed h-11"
                 />
               </div>
-              <div>
-                <Label>Quantity Thrown (L)</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Quantity Thrown (L)
+                </Label>
                 <Input
                   type="number"
+                  min={1}
                   value={
                     formData.thrownOutFuel?.find((f) => f.fuelType === fuel)
                       ?.quantity ?? ""
@@ -173,13 +182,25 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                   onChange={(e) => {
                     const updated = formData.thrownOutFuel.map((entry) =>
                       entry.fuelType === fuel
-                        ? { ...entry, quantity: e.target.value }
+                        ? {
+                            ...entry,
+                            quantity: getSafePositive(e.target.value),
+                          }
                         : entry
                     );
                     setFormData({ thrownOutFuel: updated });
                   }}
-                  min={0}
-                  className="bg-gray-50 border-gray-300"
+                  onBlur={(e) => {
+                    if (e.target.value === "" || Number(e.target.value) <= 0) {
+                      const updated = formData.thrownOutFuel.map((entry) =>
+                        entry.fuelType === fuel
+                          ? { ...entry, quantity: "1" }
+                          : entry
+                      );
+                      setFormData({ thrownOutFuel: updated });
+                    }
+                  }}
+                  className="bg-gray-50 border-gray-300 h-11"
                 />
               </div>
             </div>
@@ -187,55 +208,73 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
         </section>
 
         {/* Fuel Readings */}
-        <section className="border border-gray-200 bg-white rounded-lg p-6 shadow-md space-y-6">
-          <h3 className="text-xl font-semibold text-gray-900">Fuel Readings</h3>
+        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
+          <h3 className="text-2xl font-bold text-gray-900">Fuel Readings</h3>
           {fuelTypes.map((fuel) => {
             const entries = (formData.readings || []).filter(
               (r) => r.fuelType === fuel
             );
             return (
-              <div key={fuel} className="space-y-5">
+              <div key={fuel} className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-semibold">{fuel} Nozzles</h4>
-                  <Button variant="outline" onClick={() => addReading(fuel)}>
+                  <h4 className="text-xl font-semibold text-gray-800">
+                    {fuel} Nozzles
+                  </h4>
+                  <Button
+                    variant="outline"
+                    onClick={() => addReading(fuel)}
+                    className="h-11 px-6"
+                  >
                     Add {fuel} Nozzle
                   </Button>
                 </div>
                 {entries.map(({ nozzle, opening, closing }) => (
                   <div
                     key={`${fuel}-nozzle-${nozzle}`}
-                    className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-100 p-4 rounded-md"
+                    className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-gray-50 p-6 rounded-xl border border-gray-200"
                   >
-                    <div>
-                      <Label>Opening - Nozzle {nozzle}</Label>
+                    <div className="space-y-3">
+                      <Label className="text-sm font-semibold text-gray-700">
+                        Opening - Nozzle {nozzle} (L)
+                      </Label>
                       <Input
                         type="number"
                         value={opening}
                         readOnly
-                        className="bg-gray-100 border border-gray-300 text-gray-600"
+                        className="bg-gray-100 border-gray-300 text-gray-600 h-11"
                       />
                     </div>
-                    <div>
-                      <Label>Closing *</Label>
+                    <div className="space-y-3">
+                      <Label className="text-sm font-semibold text-gray-700">
+                        Closing (L) *
+                      </Label>
                       <Input
                         type="number"
+                        min={0}
                         value={closing}
                         onChange={(e) =>
                           handleReadingChange(
                             fuel,
                             nozzle,
                             "closing",
-                            e.target.value
+                            e.target.value === ""
+                              ? ""
+                              : Math.max(0, Number(e.target.value))
                           )
                         }
-                        min={0}
-                        className="bg-gray-50 border-gray-300"
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            handleReadingChange(fuel, nozzle, "closing", "0");
+                          }
+                        }}
+                        className="bg-gray-50 border-gray-300 h-11"
                       />
                     </div>
                     <div className="flex items-end">
                       <Button
                         variant="destructive"
                         onClick={() => deleteReading(fuel, nozzle)}
+                        className="h-11 px-6"
                       >
                         Delete
                       </Button>
@@ -248,15 +287,17 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
         </section>
 
         {/* Lube Sales */}
-        <section className="border border-gray-200 bg-white rounded-lg p-6 shadow-md space-y-6">
-          <h3 className="text-xl font-semibold text-gray-900">Lube Sales</h3>
+        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
+          <h3 className="text-2xl font-bold text-gray-900">Lube Sales</h3>
           {(formData.lubeSales || []).map((item, index) => (
             <div
               key={index}
-              className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-gray-100 p-4 rounded-md"
+              className="grid grid-cols-1 md:grid-cols-4 gap-8 bg-gray-50 p-6 rounded-xl border border-gray-200"
             >
-              <div>
-                <Label>Description</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Description
+                </Label>
                 <Input
                   value={item.description}
                   onChange={(e) => {
@@ -264,33 +305,55 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                     updated[index].description = e.target.value;
                     setFormData({ lubeSales: updated });
                   }}
-                  className="bg-gray-50 border-gray-300"
+                  className="bg-gray-50 border-gray-300 h-11"
                 />
               </div>
-              <div>
-                <Label>Amount (₹) *</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Amount (₹) *
+                </Label>
                 <Input
-                  type="number"
-                  value={item.amount}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatINR(item.amount || "")}
                   onChange={(e) => {
+                    const raw = e.target.value.replace(/,/g, "");
                     const updated = [...formData.lubeSales];
-                    updated[index].amount = e.target.value;
+                    updated[index].amount =
+                      raw === "" ? "" : Math.max(0, Number(raw));
                     setFormData({ lubeSales: updated });
                   }}
-                  className="bg-gray-50 border-gray-300"
+                  onBlur={(e) => {
+                    const updated = [...formData.lubeSales];
+                    if (e.target.value === "") {
+                      updated[index].amount = "0";
+                      setFormData({ lubeSales: updated });
+                    }
+                  }}
+                  className="bg-gray-50 border-gray-300 h-11"
                 />
               </div>
-              <div>
-                <Label>Quantity (L) *</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Quantity (L) *
+                </Label>
                 <Input
                   type="number"
+                  min={1}
                   value={item.quantity || ""}
                   onChange={(e) => {
                     const updated = [...formData.lubeSales];
-                    updated[index].quantity = e.target.value;
+                    updated[index].quantity = getSafePositive(e.target.value);
                     setFormData({ lubeSales: updated });
                   }}
-                  className="bg-gray-50 border-gray-300"
+                  onBlur={(e) => {
+                    if (e.target.value === "" || Number(e.target.value) <= 0) {
+                      const updated = [...formData.lubeSales];
+                      updated[index].quantity = "1";
+                      setFormData({ lubeSales: updated });
+                    }
+                  }}
+                  className="bg-gray-50 border-gray-300 h-11"
                 />
               </div>
               <div className="flex items-end">
@@ -302,6 +365,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                     );
                     setFormData({ lubeSales: updated });
                   }}
+                  className="h-11 px-6"
                 >
                   Delete
                 </Button>
@@ -314,10 +378,11 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
               onClick={() => {
                 const updated = [
                   ...(formData.lubeSales || []),
-                  { description: "", amount: "", quantity: 1 },
+                  { description: "", amount: "", quantity: "1" },
                 ];
                 setFormData({ lubeSales: updated });
               }}
+              className="h-11 px-6"
             >
               Add Lube Sale
             </Button>
@@ -325,7 +390,11 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
         </section>
 
         <div className="pt-4 flex justify-end">
-          <Button type="button" onClick={onNext}>
+          <Button
+            type="button"
+            onClick={onNext}
+            className="h-11 px-6 bg-black text-white hover:bg-gray-800"
+          >
             Next
           </Button>
         </div>

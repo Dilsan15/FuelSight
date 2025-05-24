@@ -23,12 +23,12 @@ const shiftSchema = new mongoose.Schema({
   },
 
   sales: {
-    
     cashInHand: { type: Number, default: 0 },
     cashWithManager: { type: Number, default: 0 },
     qrTransfer: { type: Number, default: 0 },
     card: { type: Number, default: 0 },
-    deferralTotal: { type: Number, default: 0 },
+    creditSalesTotal: { type: Number, default: 0 },
+    creditBackTotal: { type: Number, default: 0 },
     lost: {type: Number, default: 0}
   },
 
@@ -40,7 +40,7 @@ const shiftSchema = new mongoose.Schema({
     }
   ],
 
-  thrownOutFuel: [
+  nozzleTesting: [
     {
       fuelType: {
         type: String,
@@ -52,20 +52,20 @@ const shiftSchema = new mongoose.Schema({
   ],
 
   readings: [
-  {
-    fuelType: {
-      type: String,
-      enum: ['XG', 'HSD', 'MS'],
-      required: true
-    },
-    nozzle: {
-      type: Number,
-      required: true
-    },
-    opening: { type: Number, required: true },
-    closing: { type: Number, required: true }
-  }
-],
+    {
+      fuelType: {
+        type: String,
+        enum: ['XG', 'HSD', 'MS'],
+        required: true
+      },
+      nozzle: {
+        type: Number,
+        required: true
+      },
+      opening: { type: Number, required: true },
+      closing: { type: Number, required: true }
+    }
+  ],
 
   dayRate: {
     XG: { type: Number},
@@ -73,15 +73,14 @@ const shiftSchema = new mongoose.Schema({
     MS: { type: Number }
   },
 
-
-  deferrals: [
+  creditSales: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'DefPayOrder'
     }
   ],
 
-  payments: [
+  creditBack: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'DefPayOrder'
@@ -89,5 +88,37 @@ const shiftSchema = new mongoose.Schema({
   ]
 
 }, { timestamps: true });
+
+// Add pre-save middleware to round numbers to 2 decimal places
+shiftSchema.pre('save', function(next) {
+  // Round sales numbers (monetary values only)
+  if (this.sales) {
+    Object.keys(this.sales).forEach(key => {
+      if (typeof this.sales[key] === 'number') {
+        this.sales[key] = parseFloat(this.sales[key].toFixed(2));
+      }
+    });
+  }
+
+  // Round lube sales (monetary values only, not quantities)
+  if (this.lubeSales) {
+    this.lubeSales.forEach(lube => {
+      if (typeof lube.amount === 'number') {
+        lube.amount = parseFloat(lube.amount.toFixed(2));
+      }
+    });
+  }
+
+  // Round day rates (monetary values)
+  if (this.dayRate) {
+    Object.keys(this.dayRate).forEach(key => {
+      if (typeof this.dayRate[key] === 'number') {
+        this.dayRate[key] = parseFloat(this.dayRate[key].toFixed(2));
+      }
+    });
+  }
+
+  next();
+});
 
 module.exports = mongoose.model('Shift', shiftSchema);

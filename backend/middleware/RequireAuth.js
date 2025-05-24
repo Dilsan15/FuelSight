@@ -14,12 +14,17 @@ const requireAuth = async (req, res, next) => {
   try {
     const { _id } = jwt.verify(token, process.env.JWT_SECRET);
 
-    req.user = await User.findOne({ _id }).select('_id username role stationName');
+    const user = await User.findOne({ _id }).select('_id username role stationName isActive');
 
-    if (!req.user) {
+    if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({ error: 'Account is inactive. Please contact administrator.' });
+    }
+
+    req.user = user;
     next();
     
   } catch (error) {

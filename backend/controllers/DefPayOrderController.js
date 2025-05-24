@@ -44,15 +44,15 @@ const createDefPayOrder = async (req, res) => {
     const account = await DefPayAccount.findById(defPayAccount);
     if (!account) return res.status(404).json({ error: 'Account not found.' });
 
-    if (type === 'deferal') {
+    if (type === 'creditSale') {
       account.balance -= Number(amount);
-    } else if (type === 'payment') {
+    } else if (type === 'creditBack') {
       account.balance += Number(amount);
     }
 
     account.paymentHistory.push({
       defPayOrder: undefined,
-      amount: type === 'deferal' ? -Number(amount) : Number(amount),
+      amount: type === 'creditSale' ? -Number(amount) : Number(amount),
       date: new Date()
     });
 
@@ -63,10 +63,10 @@ const createDefPayOrder = async (req, res) => {
       amount,
       shiftId: shift ? shift._id : undefined,
       orderDate: new Date(shiftDate),
-      paymentType: type === 'payment' ? paymentType : undefined,
-      fuelType: type === 'deferal' ? fuelType : undefined,
-      quantity: type === 'deferal' ? quantity : undefined,
-      dueDate: type === 'deferal' ? dueDate : undefined,
+      paymentType: type === 'creditBack' ? paymentType : undefined,
+      fuelType: type === 'creditSale' ? fuelType : undefined,
+      quantity: type === 'creditSale' ? quantity : undefined,
+      dueDate: type === 'creditSale' ? dueDate : undefined,
       submittedByName,
       description,
       code,
@@ -77,8 +77,8 @@ const createDefPayOrder = async (req, res) => {
     await account.save();
 
     if (shift) {
-      const key = type === 'payment' ? 'payments' : 'deferrals';
-      const salesKey = type === 'payment' ? 'advancePaymentTotal' : 'deferralTotal';
+      const key = type === 'creditBack' ? 'creditBack' : 'creditSales';
+      const salesKey = type === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
 
       shift[key].push(order._id);
       if (!shift.sales) shift.sales = {};
@@ -97,75 +97,84 @@ const createDefPayOrder = async (req, res) => {
 // UPDATE
 const updateDefPayOrder = async (req, res) => {
   const { id } = req.params;
+  const {
+    userId,
+    accountId,
+    type,
+    amount,
+    shiftId,
+    shiftDate,
+    paymentType,
+    fuelType,
+    quantity,
+    dueDate,
+    submittedByName,
+    description
+  } = req.body;
 
   try {
     const existingOrder = await DefPayOrder.findById(id);
-    if (!existingOrder) return res.status(404).json({ error: 'Order not found.' });
+    if (!existingOrder) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
 
-    const {
-      user: newUserId,
-      defPayAccount: newAccountId,
-      type: newType,
-      amount: newAmount,
-      shiftDate,
-      fuelType,
-      quantity,
-      dueDate,
-      paymentType,
-      submittedByName,
-      description
-    } = req.body;
-
-    // Revert balance from old account
-    const oldAccountId = existingOrder.defPayAccount.toString();
-    const oldAmount = existingOrder.amount;
     const oldType = existingOrder.type;
+    const oldAmount = existingOrder.amount;
+    const newType = type;
+    const newAmount = Number(amount);
 
-    const oldAccount = await DefPayAccount.findById(oldAccountId);
-    if (!oldAccount) return res.status(404).json({ error: 'Old account not found.' });
+    // === Update associated account
+    const oldAccount = await DefPayAccount.findById(existingOrder.defPayAccount);
+    const newAccount = await DefPayAccount.findById(accountId);
 
-    if (oldType === 'deferal') oldAccount.balance += oldAmount;
-    if (oldType === 'payment') oldAccount.balance -= oldAmount;
+    if (!oldAccount || !newAccount) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
 
+    // === Update associated shift
+    const newShift = shiftId ? await Shift.findById(shiftId) : null;
+
+    // === Revert old account balance
+    if (oldType === 'creditBack') {
+      oldAccount.balance += oldAmount;
+    } else if (oldType === 'creditSale') {
+      oldAccount.balance -= oldAmount;
+    }
+
+    // === Apply new account balance
+    if (newType === 'creditBack') {
+      newAccount.balance -= newAmount;
+    } else if (newType === 'creditSale') {
+      newAccount.balance += newAmount;
+    }
+
+    // === Update payment history
     oldAccount.paymentHistory = oldAccount.paymentHistory.filter(
       entry => entry.defPayOrder.toString() !== id
     );
-    await oldAccount.save();
-
-    // Apply new balance to new account
-    const newAccount = await DefPayAccount.findById(newAccountId);
-    if (!newAccount) return res.status(404).json({ error: 'New account not found.' });
-
-    if (newType === 'deferal') newAccount.balance -= Number(newAmount);
-    if (newType === 'payment') newAccount.balance += Number(newAmount);
 
     newAccount.paymentHistory.push({
-      defPayOrder: id,
-      amount: newType === 'deferal' ? -Number(newAmount) : Number(newAmount),
-      date: new Date()
+      amount: newType === 'creditBack' ? -newAmount : newAmount,
+      date: new Date(),
+      defPayOrder: id
     });
-    await newAccount.save();
 
-    // Try to find shift to update
-    const newShift = await Shift.findOne({
-      user: newUserId,
-      shiftDateSubmitted: {
-        $gte: new Date(shiftDate),
-        $lt: new Date(new Date(shiftDate).getTime() + 24 * 60 * 60 * 1000)
-      }
-    });
+    await oldAccount.save();
+    if (oldAccount._id.toString() !== newAccount._id.toString()) {
+      await newAccount.save();
+    }
 
     const oldShiftId = existingOrder.shiftId?.toString();
     const newShiftId = newShift?._id?.toString();
 
-    const salesKeyOld = oldType === 'payment' ? 'advancePaymentTotal' : 'deferralTotal';
-    const salesKeyNew = newType === 'payment' ? 'advancePaymentTotal' : 'deferralTotal';
+    const salesKeyOld = oldType === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
+    const salesKeyNew = newType === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
 
     // Always revert from old shift if it exists
     if (oldShiftId) {
       const oldShift = await Shift.findById(oldShiftId);
       if (oldShift) {
-        const oldKey = oldType === 'payment' ? 'payments' : 'deferrals';
+        const oldKey = oldType === 'creditBack' ? 'creditBack' : 'creditSales';
         oldShift[oldKey] = oldShift[oldKey].filter(oId => oId.toString() !== id);
         oldShift.sales[salesKeyOld] = (oldShift.sales[salesKeyOld] || 0) - oldAmount;
         await oldShift.save();
@@ -174,7 +183,7 @@ const updateDefPayOrder = async (req, res) => {
 
     // Apply to new shift (if any)
     if (newShift) {
-      const listKey = newType === 'payment' ? 'payments' : 'deferrals';
+      const listKey = newType === 'creditBack' ? 'creditBack' : 'creditSales';
       if (!newShift[listKey].includes(id)) {
         newShift[listKey].push(id);
       }
@@ -184,20 +193,19 @@ const updateDefPayOrder = async (req, res) => {
 
     // Update the order
     const updatePayload = {
-    user: newUserId,
-    defPayAccount: newAccountId,
-    type: newType,
-    amount: newAmount,
-    shiftId: newShift?._id,
-    submittedByName,
-    description,
-    orderDate: new Date(shiftDate),
-    paymentType: newType === 'payment' ? paymentType : undefined,
-    fuelType: newType === 'deferal' ? fuelType : undefined,
-    quantity: newType === 'deferal' ? quantity : undefined,
-    dueDate: newType === 'deferal' ? dueDate : undefined
-  };
-
+      user: userId,
+      defPayAccount: accountId,
+      type: newType,
+      amount: newAmount,
+      shiftId: newShift?._id,
+      submittedByName,
+      description,
+      orderDate: new Date(shiftDate),
+      paymentType: newType === 'creditBack' ? paymentType : undefined,
+      fuelType: newType === 'creditSale' ? fuelType : undefined,
+      quantity: newType === 'creditSale' ? quantity : undefined,
+      dueDate: newType === 'creditSale' ? dueDate : undefined
+    };
 
     const updatedOrder = await DefPayOrder.findByIdAndUpdate(id, updatePayload, {
       new: true,
@@ -212,7 +220,6 @@ const updateDefPayOrder = async (req, res) => {
 };
 
 // DELETE
-// DELETE
 const deleteDefPayOrder = async (req, res) => {
   const { id } = req.params;
 
@@ -224,8 +231,8 @@ const deleteDefPayOrder = async (req, res) => {
     if (order.shiftId) {
       const shift = await Shift.findById(order.shiftId);
       if (shift) {
-        const key = order.type === 'payment' ? 'payments' : 'deferrals';
-        const salesKey = order.type === 'payment' ? 'advancePaymentTotal' : 'deferralTotal';
+        const key = order.type === 'creditBack' ? 'creditBack' : 'creditSales';
+        const salesKey = order.type === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
 
         // Remove from payments or deferrals list
         shift[key] = shift[key].filter(oId => oId.toString() !== id);
@@ -243,9 +250,9 @@ const deleteDefPayOrder = async (req, res) => {
     // === Update associated account
     const account = await DefPayAccount.findById(order.defPayAccount);
     if (account) {
-      if (order.type === 'payment') {
+      if (order.type === 'creditBack') {
         account.balance -= order.amount;
-      } else if (order.type === 'deferal') {
+      } else if (order.type === 'creditSale') {
         account.balance += order.amount;
       }
 
@@ -256,18 +263,18 @@ const deleteDefPayOrder = async (req, res) => {
       await account.save();
     }
 
-    res.status(200).json({ message: '✅ Order deleted and shift/account updated.' });a
+    res.status(200).json({ message: '✅ Order deleted and shift/account updated.' });
   } catch (err) {
     console.error('❌ Delete error:', err);
     res.status(500).json({ error: 'Failed to delete order.' });
   }
 };
 
-
 // GET ONE
 const getDefPayOrder = async (req, res) => {
   const { id } = req.params;
   try {
+    console.log("hello")
     const order = await DefPayOrder.findById(id)
       .populate('user defPayAccount shiftId');
     if (!order) return res.status(404).json({ error: 'Order not found.' });
@@ -285,7 +292,7 @@ const getDefPayOrders = async (req, res) => {
   const query = {};
   const trimmedSearch = search.trim();
 
-  if (type === 'deferal' || type === 'payment') {
+  if (type === 'creditSale' || type === 'creditBack') {
     query.type = type;
   }
 

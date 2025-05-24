@@ -14,13 +14,15 @@ const {
 
 router.use(requireAuth)
 router.get('/latest', getLatestDayRate);
+router.get('/search', getDayRatesWithFilters);    
 
 
+router.use(requireAuth)
 router.use(requireAdmin)
 router.post('/create', createDayRate);
 router.put('/update/:id', updateDayRate);
 router.delete('/delete/:id', deleteDayRate);
-router.get('/search', getDayRatesWithFilters);     // Get with pagination and/or date filters
+  // Get with pagination and/or date filters
 
 
 module.exports = router;

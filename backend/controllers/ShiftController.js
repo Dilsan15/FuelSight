@@ -10,7 +10,9 @@ const getDefaultDueDate = () => {
 // SUBMIT Shift
 const submitShift = async (req, res) => {
   try {
-    const { shift = {}, deferals = [], payments = [] } = req.body;
+
+    console.log(req.body)
+    const { shift = {}, creditSales = [], creditBack = [] } = req.body;
     const {
       submittedByName,
       timeType,
@@ -18,7 +20,7 @@ const submitShift = async (req, res) => {
       readings = [],
       dayRate = {},
       lubeSales = [],
-      thrownOutFuel = [],
+      nozzleTesting = [],
       date
     } = shift;
 
@@ -26,9 +28,10 @@ const submitShift = async (req, res) => {
       return res.status(400).json({ error: "submittedByName and timeType are required." });
     }
 
+    // Sanitize sales numbers (monetary values)
     const sanitizedSales = {};
     for (const [key, val] of Object.entries(sales)) {
-      sanitizedSales[key] = Number(val) || 0;
+      sanitizedSales[key] = parseFloat((Number(val) || 0).toFixed(2));
     }
 
     const groupedReadings = readings.reduce((acc, curr) => {
@@ -37,24 +40,24 @@ const submitShift = async (req, res) => {
       return acc;
     }, {});
 
-    const thrownMap = thrownOutFuel.reduce((acc, entry) => {
+    const nozzleTestingMap = nozzleTesting.reduce((acc, entry) => {
       acc[entry.fuelType] = parseFloat(entry.quantity || 0);
       return acc;
     }, {});
 
     let fuelRevenue = 0;
     for (const [fuelType, entries] of Object.entries(groupedReadings)) {
-      const rate = parseFloat(dayRate[fuelType] || 0);
+      const rate = parseFloat((parseFloat(dayRate[fuelType] || 0)).toFixed(2));
       const totalVolume = entries.reduce((sum, r) =>
         sum + (parseFloat(r.closing || 0) - parseFloat(r.opening || 0)), 0);
-      const netVolume = totalVolume - (thrownMap[fuelType] || 0);
-      fuelRevenue += netVolume * rate;
+      const netVolume = totalVolume - (nozzleTestingMap[fuelType] || 0);
+      fuelRevenue += parseFloat((netVolume * rate).toFixed(2));
     }
 
-    const lubeRevenue = lubeSales.reduce(
-      (sum, l) => sum + parseFloat(l.amount || 0), 0);
-    const lost = parseFloat(sanitizedSales.lost || 0);
-    const total = fuelRevenue + lubeRevenue - lost;
+    const lubeRevenue = parseFloat(lubeSales.reduce(
+      (sum, l) => sum + parseFloat((parseFloat(l.amount || 0)).toFixed(2)), 0).toFixed(2));
+    const lost = parseFloat((parseFloat(sanitizedSales.lost || 0)).toFixed(2));
+    const total = parseFloat((fuelRevenue + lubeRevenue - lost).toFixed(2));
 
     const shiftDateParsed = Date.parse(date);
     const shiftDate = isNaN(shiftDateParsed) ? new Date() : new Date(shiftDateParsed);
@@ -66,35 +69,48 @@ const submitShift = async (req, res) => {
       timeType,
       shiftDateSubmitted: shiftDate,
       sales: sanitizedSales,
-      readings,
-      dayRate,
-      lubeSales,
-      thrownOutFuel,
+      readings: readings.map(r => ({
+        ...r,
+        opening: parseFloat(r.opening || 0),
+        closing: parseFloat(r.closing || 0)
+      })),
+      dayRate: Object.fromEntries(
+        Object.entries(dayRate).map(([key, val]) => [key, parseFloat((parseFloat(val || 0)).toFixed(2))])
+      ),
+      lubeSales: lubeSales.map(l => ({
+        ...l,
+        amount: parseFloat((parseFloat(l.amount || 0)).toFixed(2)),
+        quantity: parseFloat(l.quantity || 0)
+      })),
+      nozzleTesting: nozzleTesting.map(f => ({
+        ...f,
+        quantity: parseFloat(f.quantity || 0)
+      })),
       total
     });
 
     const accountMap = {};
 
-    for (const d of deferals) {
+    for (const d of creditSales) {
       if (!accountMap[d.code]) {
         const found = await DefPayAccount.findOne({ code: d.code });
         if (!found) {
           return res.status(400).json({
-            error: `Deferral account with code "${d.code}" does not exist. Only admins can create new accounts.`
+            error: `Credit Sale account with code "${d.code}" does not exist. Only admins can create new accounts.`
           });
         }
         accountMap[d.code] = found;
       }
 
       const account = accountMap[d.code];
-      const quantity = Number(d.litres || 0);
+      const amount = parseFloat((Number(d.amount || 0)).toFixed(2));
       const fuelType = d.fuelType;
-      const rate = parseFloat(dayRate[fuelType] || 0);
-      const amount = Math.round(quantity * rate);
+      const rate = parseFloat((parseFloat(dayRate[fuelType] || 0)).toFixed(2));
+      const quantity = parseFloat(amount / rate);
 
-      const deferalOrder = await DefPayOrder.create({
+      const creditSaleOrder = await DefPayOrder.create({
         code: d.code,
-        type: 'deferal',
+        type: 'creditSale',
         actName: `${account.firstName} ${account.lastName}`,
         amount,
         quantity,
@@ -109,20 +125,20 @@ const submitShift = async (req, res) => {
         orderDate: shiftDate,
       });
 
-      shiftDoc.deferrals.push(deferalOrder._id);
-      shiftDoc.sales.deferralTotal = (shiftDoc.sales.deferralTotal || 0) + amount;
+      shiftDoc.creditSales.push(creditSaleOrder._id);
+      shiftDoc.sales.creditSalesTotal = (shiftDoc.sales.creditSalesTotal || 0) + amount;
 
       account.balance -= amount;
       account.paymentHistory.push({
         amount: -amount,
         date: new Date(),
-        defPayOrder: deferalOrder._id
+        defPayOrder: creditSaleOrder._id
       });
 
       await account.save();
     }
 
-    for (const p of payments) {
+    for (const p of creditBack) {
       if (!accountMap[p.code]) {
         const found = await DefPayAccount.findOne({ code: p.code });
         if (!found) {
@@ -135,10 +151,11 @@ const submitShift = async (req, res) => {
       const account = accountMap[p.code];
       const paymentAmount = Number(p.amount || 0);
 
-      const paymentOrder = await DefPayOrder.create({
+
+      const creditBackOrder = await DefPayOrder.create({
         code: p.code,
         actName: `${account.firstName} ${account.lastName}`,
-        type: 'payment',
+        type: 'creditBack',
         amount: paymentAmount,
         description: p.note || '',
         submittedBy: req.user._id,
@@ -150,14 +167,14 @@ const submitShift = async (req, res) => {
         orderDate: shiftDate,
       });
 
-      shiftDoc.payments.push(paymentOrder._id);
-      shiftDoc.sales.advancePaymentTotal = (shiftDoc.sales.advancePaymentTotal || 0) + paymentAmount;
+      shiftDoc.creditBack.push(creditBackOrder._id);
+      shiftDoc.sales.creditBackTotal = (shiftDoc.sales.creditBackTotal || 0) + paymentAmount;
 
       account.balance += paymentAmount;
       account.paymentHistory.push({
         amount: paymentAmount,
         date: new Date(),
-        defPayOrder: paymentOrder._id
+        defPayOrder: creditBackOrder._id
       });
 
       await account.save();
@@ -210,8 +227,8 @@ const submitShift = async (req, res) => {
     });
 
     for (const order of linkedOrders) {
-      const key = order.type === 'payment' ? 'payments' : 'deferrals';
-      const salesKey = order.type === 'payment' ? 'advancePaymentTotal' : 'deferralTotal';
+      const key = order.type === 'creditBack' ? 'creditBack' : 'creditSales';
+      const salesKey = order.type === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
 
       if (!shiftDoc[key].some(id => id.toString() === order._id.toString())) {
         shiftDoc[key].push(order._id);
@@ -224,7 +241,7 @@ const submitShift = async (req, res) => {
     console.log(`🔗 Linked ${updatedOrders.modifiedCount} unlinked orders to shift ${shiftDoc._id}`);
 
     res.status(201).json({
-      message: '✅ Shift and related deferals/payments submitted successfully.',
+      message: '✅ Shift and related credit sales/backs submitted successfully.',
       shiftId: shiftDoc._id
     });
 
@@ -249,7 +266,7 @@ const updateShift = async (req, res) => {
     if (readings) shift.readings = readings;
     if (dayRate) shift.dayRate = dayRate;
     if (req.body.lubeSales) shift.lubeSales = req.body.lubeSales;
-    if (req.body.thrownOutFuel) shift.thrownOutFuel = req.body.thrownOutFuel;
+    if (req.body.nozzleTesting) shift.nozzleTesting = req.body.nozzleTesting;
 
     await shift.save();
     res.status(200).json({ message: '✅ Shift updated successfully.', shift });
@@ -333,7 +350,10 @@ const getShifts = async (req, res) => {
       .sort({ shiftDateSubmitted: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('user', 'username stationName');
+     .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
+     .populate({ path: "creditBack",  select: "amount code actName paymentType" })
+     .populate({ path: "user", select: "stationName" })
+     .lean();          // optional – send plain objects
 
     const total = await Shift.countDocuments(filter);
 
@@ -354,10 +374,11 @@ const getShift = async (req, res) => {
 
   try {
     const shift = await Shift.findById(id)
-      .populate('user', 'username stationName')
-      .populate('deferrals')
-      .populate('payments');
-
+   
+     .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
+     .populate({ path: "creditBack",  select: "amount code actName paymentType" })
+     .populate({ path: "user", select: "stationName" })
+     .lean();          
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found.' });
     }
