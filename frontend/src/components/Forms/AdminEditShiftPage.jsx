@@ -1,21 +1,44 @@
 // AdminEditShiftPage.jsx
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useGetShift } from "@/Hooks/ShiftHooks/useShift";
 import { useUpdateShift } from "@/Hooks/ShiftHooks/useUpdateShift";
+import { getSafePositive } from "@/utils/handleSafeInput";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatINR } from "@/utils/formatting";
+import { ArrowLeft, Save } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+/* ------------------------------------------------------------------ */
 
 const AdminEditShiftPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { shift, loading, error, fetchShift } = useGetShift();
-  const { updateShift } = useUpdateShift();
+  const { shift, loading, error: fetchError, fetchShift } = useGetShift();
+  const { updateShift, isUpdating, error: updateError } = useUpdateShift();
   const [form, setForm] = useState(null);
 
+  /* ------------ fetch / sync ------------ */
   useEffect(() => {
     fetchShift(id);
   }, [id]);
@@ -24,6 +47,7 @@ const AdminEditShiftPage = () => {
     if (shift) setForm({ ...shift });
   }, [shift]);
 
+  /* ------------ helpers ------------ */
   const handleChange = (section, field, value) => {
     setForm((prev) => ({
       ...prev,
@@ -34,175 +58,392 @@ const AdminEditShiftPage = () => {
     }));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
-      const payload = {
+      await updateShift(id, {
         sales: form.sales,
         dayRate: form.dayRate,
         readings: form.readings,
         lubeSales: form.lubeSales,
         thrownOutFuel: form.thrownOutFuel,
-      };
-
-      await updateShift(id, payload);
-      alert("✅ Shift updated");
-      navigate("/admin-shifts");
+      });
+      navigate(`/shift-summary/${id}`);
     } catch (err) {
-      console.error("Update error", err);
-      alert("❌ Failed to update shift");
+      console.error(err);
     }
   };
 
-  if (loading || !form) return <div className="p-6">Loading...</div>;
-  if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
+  /* ------------ loading / error states ------------ */
+  if (loading || !form) {
+    return (
+      <div className="max-w-4xl mx-auto p-6 space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-[200px] w-full" />
+        <Skeleton className="h-[200px] w-full" />
+        <Skeleton className="h-[200px] w-full" />
+      </div>
+    );
+  }
 
+  if (fetchError || updateError) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <p className="text-red-600">Error: {fetchError || updateError}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  /* ------------ quick totals for summary card ------------ */
+  const totalFuelSold = form.readings.reduce(
+    (s, r) => s + (r.closing - r.opening),
+    0
+  );
+  const totalRevenue = form.readings.reduce((s, r) => {
+    const rate = +form.dayRate?.[r.fuelType] || 0;
+    return s + (r.closing - r.opening) * rate;
+  }, 0);
+  const totalLubeSales = form.lubeSales.reduce(
+    (s, l) => s + l.amount * l.quantity,
+    0
+  );
+
+  /* ================================================================== */
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">Edit Shift</h1>
+      {/* ────────── Header ────────── */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Edit Shift</h1>
+          <p className="text-gray-600 mt-1">
+            {form.user?.stationName} – {form.timeType} Shift
+          </p>
+        </div>
 
-      {/* SALES */}
-      <Card>
-        <CardContent className="space-y-4 pt-6">
-          <h2 className="font-semibold">Sales</h2>
-          {Object.entries(form.sales).map(([key, value]) => (
-            <div key={key}>
-              <Label>{key}</Label>
-              <Input
-                type="number"
-                value={value}
-                onChange={(e) =>
-                  handleChange("sales", key, Number(e.target.value))
-                }
-              />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => navigate(-1)}
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </Button>
 
-      {/* READINGS */}
-      <Card>
-        <CardContent className="space-y-4 pt-6">
-          <h2 className="font-semibold">Fuel Readings</h2>
-          {form.readings.map((r, i) => (
-            <div key={i} className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Fuel</Label>
-                <Input value={r.fuelType} disabled />
-              </div>
-              <div>
-                <Label>Opening</Label>
-                <Input
-                  type="number"
-                  value={r.opening}
-                  onChange={(e) => {
-                    const updated = [...form.readings];
-                    updated[i].opening = Number(e.target.value);
-                    setForm((prev) => ({ ...prev, readings: updated }));
-                  }}
-                />
-              </div>
-              <div>
-                <Label>Closing</Label>
-                <Input
-                  type="number"
-                  value={r.closing}
-                  onChange={(e) => {
-                    const updated = [...form.readings];
-                    updated[i].closing = Number(e.target.value);
-                    setForm((prev) => ({ ...prev, readings: updated }));
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button className="gap-2" disabled={isUpdating}>
+                <Save className="h-4 w-4" />
+                {isUpdating ? "Saving…" : "Save Changes"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Update</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to update this shift?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleSubmit}>
+                  Update
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
 
-      {/* LUBE SALES */}
-      <Card>
-        <CardContent className="space-y-4 pt-6">
-          <h2 className="font-semibold">Lube Sales</h2>
-          {form.lubeSales.map((l, i) => (
-            <div key={i} className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Description</Label>
-                <Textarea
-                  value={l.description}
-                  onChange={(e) => {
-                    const updated = [...form.lubeSales];
-                    updated[i].description = e.target.value;
-                    setForm((prev) => ({ ...prev, lubeSales: updated }));
-                  }}
-                />
-              </div>
-              <div>
-                <Label>Amount</Label>
-                <Input
-                  type="number"
-                  value={l.amount}
-                  onChange={(e) => {
-                    const updated = [...form.lubeSales];
-                    updated[i].amount = Number(e.target.value);
-                    setForm((prev) => ({ ...prev, lubeSales: updated }));
-                  }}
-                />
-              </div>
-              <div>
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  value={l.quantity}
-                  onChange={(e) => {
-                    const updated = [...form.lubeSales];
-                    updated[i].quantity = Number(e.target.value);
-                    setForm((prev) => ({ ...prev, lubeSales: updated }));
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* LINKED ORDERS (READ-ONLY) */}
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          <h2 className="font-semibold">Linked Deferrals & Payments</h2>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <div>
-              <strong>Deferrals:</strong>
-              <ul className="ml-4 list-disc">
-                {form.deferrals?.map((d) => (
-                  <li key={d._id}>
-                    Code: {d.code} | Fuel: {d.fuelType} | Qty: {d.quantity} | ₹{d.amount} | Desc:{" "}
-                    {d.description || "N/A"} | Due: {new Date(d.dueDate).toLocaleDateString()}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <strong>Payments:</strong>
-              <ul className="ml-4 list-disc">
-                {form.payments?.map((p) => (
-                  <li key={p._id}>
-                    Code: {p.code} | ₹{p.amount} | Type: {p.paymentType} | Desc: {p.description || "N/A"}
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {/* ────────── Summary Card ────────── */}
+      <Card className="bg-gradient-to-br from-background to-muted border shadow-lg rounded-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">Shift Summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-3 gap-6">
+            <SummaryItem
+              label="Total Fuel Sold"
+              value={`${totalFuelSold.toFixed(2)} L`}
+            />
+            <SummaryItem label="Total Revenue" value={formatINR(totalRevenue)} />
+            <SummaryItem label="Lube Sales" value={formatINR(totalLubeSales)} />
           </div>
         </CardContent>
       </Card>
 
-      {/* ACTIONS */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={() => navigate(-1)}>
-          Back
-        </Button>
-        <Button onClick={handleSubmit}>Submit Changes</Button>
-      </div>
+      {/* ────────── Sales Section ────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Sales</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {Object.entries(form.sales).map(([key, value]) => {
+            const lockedKeys = [
+              "deferralTotal",
+              "advancePaymentTotal",
+              "creditSalesTotal",
+              "creditBackTotal",
+            ];
+            const isTotals = lockedKeys.includes(key);
+            return (
+              <div key={key} className="space-y-2">
+                <Label className="text-sm font-medium capitalize">
+                  {key.replace(/([A-Z])/g, " $1").trim()}
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={value}
+                  disabled={isTotals}
+                  readOnly={isTotals}
+                  onChange={(e) =>
+                    !isTotals &&
+                    handleChange("sales", key, getSafePositive(e.target.value))
+                  }
+                  onBlur={(e) => {
+                    if (
+                      !isTotals &&
+                      (e.target.value === "" || +e.target.value <= 0)
+                    ) {
+                      handleChange("sales", key, "1");
+                    }
+                  }}
+                  className={`bg-white border-gray-300 ${
+                    isTotals ? "cursor-not-allowed opacity-60" : ""
+                  }`}
+                />
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      {/* ────────── Fuel Readings ────────── */}
+      <FuelReadings
+        readings={form.readings}
+        setForm={setForm}
+      />
+
+      {/* ────────── Lube Sales (if any) ────────── */}
+      {form.lubeSales?.length > 0 && (
+        <LubeSales lubeSales={form.lubeSales} setForm={setForm} />
+      )}
+
+      {/* ────────── Linked Orders ────────── */}
+      {(form.creditSales?.length > 0 || form.creditBack?.length > 0) && (
+        <LinkedOrders sales={form.creditSales} backs={form.creditBack} />
+      )}
     </div>
   );
 };
+
+/* ===================================================================== */
+/* ------------------  sub-components  ------------------------- */
+
+const SummaryItem = ({ label, value }) => (
+  <div className="space-y-1">
+    <p className="text-sm text-gray-600">{label}</p>
+    <p className="text-2xl font-semibold">{value}</p>
+  </div>
+);
+
+const FuelReadings = ({ readings, setForm }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-lg">Fuel Readings</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="grid gap-6">
+        {readings.map((r, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg"
+          >
+            <ReadOnlyField label="Fuel Type" value={r.fuelType} />
+            <ReadOnlyField label="Opening Reading" value={r.opening} />
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Closing Reading</Label>
+              <Input
+                type="number"
+                min={1}
+                value={r.closing}
+                onChange={(e) => {
+                  const updated = [...readings];
+                  updated[i].closing = getSafePositive(e.target.value);
+                  setForm((prev) => ({ ...prev, readings: updated }));
+                }}
+                onBlur={(e) => {
+                  if (e.target.value === "" || +e.target.value <= 0) {
+                    const updated = [...readings];
+                    updated[i].closing = "1";
+                    setForm((prev) => ({ ...prev, readings: updated }));
+                  }
+                }}
+                className="bg-white border-gray-300"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+);
+
+const LubeSales = ({ lubeSales, setForm }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-lg">Lube Sales</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="grid gap-6">
+        {lubeSales.map((l, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg"
+          >
+            <TextareaField
+              label="Description"
+              value={l.description}
+              onChange={(val) => {
+                const upd = [...lubeSales];
+                upd[i].description = val;
+                setForm((p) => ({ ...p, lubeSales: upd }));
+              }}
+            />
+            <NumberField
+              label="Amount"
+              value={l.amount}
+              onChange={(val) => {
+                const upd = [...lubeSales];
+                upd[i].amount = val;
+                setForm((p) => ({ ...p, lubeSales: upd }));
+              }}
+            />
+            <NumberField
+              label="Quantity"
+              value={l.quantity}
+              onChange={(val) => {
+                const upd = [...lubeSales];
+                upd[i].quantity = val;
+                setForm((p) => ({ ...p, lubeSales: upd }));
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+);
+
+const LinkedOrders = ({ sales, backs }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-lg">Linked Orders</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="space-y-6">
+        {sales?.length > 0 && (
+          <LinkedGroup title="Credit Sales" items={sales} isBack={false} />
+        )}
+        {backs?.length > 0 && (
+          <LinkedGroup title="Credit Backs" items={backs} isBack />
+        )}
+      </div>
+    </CardContent>
+  </Card>
+);
+
+const LinkedGroup = ({ title, items, isBack }) => (
+  <div className="space-y-3">
+    <h3 className="font-medium text-gray-900">{title}</h3>
+    <div className="grid gap-3">
+      {items.map((o) => (
+        <Link
+          key={o._id}
+          to={`/order-summary/${o._id}`}
+          className="block p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <span>
+              <span className="text-gray-600">Code:</span>{" "}
+              <span className="font-medium">{o.code}</span>
+            </span>
+            <span>
+              <span className="text-gray-600">Amount:</span>{" "}
+              <span className="font-medium">{formatINR(o.amount)}</span>
+            </span>
+
+            {isBack ? (
+              <span>
+                <span className="text-gray-600">Type:</span>{" "}
+                <span className="font-medium">{o.paymentType}</span>
+              </span>
+            ) : (
+              <>
+                <span>
+                  <span className="text-gray-600">Fuel:</span>{" "}
+                  <span className="font-medium">{o.fuelType}</span>
+                </span>
+                <span>
+                  <span className="text-gray-600">Due:</span>{" "}
+                  <span className="font-medium">
+                    {new Date(o.dueDate).toLocaleDateString()}
+                  </span>
+                </span>
+              </>
+            )}
+
+            {o.description && (
+              <span className="col-span-full">
+                <span className="text-gray-600">Note:</span>{" "}
+                <span className="font-medium">{o.description}</span>
+              </span>
+            )}
+          </div>
+        </Link>
+      ))}
+    </div>
+  </div>
+);
+
+const ReadOnlyField = ({ label, value }) => (
+  <div className="space-y-2">
+    <Label className="text-sm font-medium">{label}</Label>
+    <Input value={value} disabled className="bg-white border-gray-300" />
+  </div>
+);
+
+const NumberField = ({ label, value, onChange }) => (
+  <div className="space-y-2">
+    <Label className="text-sm font-medium">{label}</Label>
+    <Input
+      type="number"
+      min={1}
+      value={value}
+      onChange={(e) => onChange(getSafePositive(e.target.value))}
+      onBlur={(e) => {
+        if (e.target.value === "" || +e.target.value <= 0) {
+          onChange("1");
+        }
+      }}
+      className="bg-white border-gray-300"
+    />
+  </div>
+);
+
+const TextareaField = ({ label, value, onChange }) => (
+  <div className="space-y-2">
+    <Label className="text-sm font-medium">{label}</Label>
+    <Textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-white border-gray-300"
+    />
+  </div>
+);
 
 export default AdminEditShiftPage;

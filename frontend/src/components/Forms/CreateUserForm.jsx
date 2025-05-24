@@ -1,16 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { useCreateUser } from '@/Hooks/AuthHooks/useCreateUser';
-import { useEditUser } from '@/Hooks/AuthHooks/useEditUser';
-import { useUsers } from '@/Hooks/AuthHooks/useUsers';
-import MultiSelect from '@/components/ui/multiselect';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useCreateUser } from "@/Hooks/AuthHooks/useCreateUser";
+import { useEditUser } from "@/Hooks/AuthHooks/useEditUser";
+import { useUsers } from "@/Hooks/AuthHooks/useUsers";
+import MultiSelect from "@/components/ui/multiselect";
+import {
+  getSafePositive,
+  enforceOneIfEmptyOrZero,
+} from "@/utils/handleSafeInput";
+import { Icons } from "@/components/ui/icons";
 
-
-const allFuelTypes = ['XG', 'HSD', 'MS'];
+const allFuelTypes = ["XG", "HSD", "MS"];
 
 const CreateUserForm = () => {
   const { id } = useParams();
@@ -24,14 +28,14 @@ const CreateUserForm = () => {
   const existingUser = users.find((u) => u._id === id);
 
   const [form, setForm] = useState({
-    username: '',
-    password: '',
-    role: 'worker',
-    stationName: '',
+    username: "",
+    password: "",
+    role: "worker",
+    stationName: "",
     isActive: true,
     fuelTypes: [],
     nozzleConfig: {},
-    readings: []
+    readings: [],
   });
 
   useEffect(() => {
@@ -43,21 +47,26 @@ const CreateUserForm = () => {
       });
 
       setForm({
-        username: existingUser.username || '',
-        password: '',
-        stationName: existingUser.stationName || '',
-        role: existingUser.role || 'worker',
+        username: existingUser.username || "",
+        password: "",
+        stationName: existingUser.stationName || "",
+        role: existingUser.role || "worker",
         isActive: existingUser.isActive ?? true,
         fuelTypes: Object.keys(grouped),
-        nozzleConfig: Object.fromEntries(Object.entries(grouped).map(([k, v]) => [k, v.length])),
-        readings: existingUser.readings || []
+        nozzleConfig: Object.fromEntries(
+          Object.entries(grouped).map(([k, v]) => [k, v.length])
+        ),
+        readings: existingUser.readings || [],
       });
     }
   }, [existingUser]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
   };
 
   const handleFuelSelect = (selected) => {
@@ -68,11 +77,13 @@ const CreateUserForm = () => {
 
     const newReadings = selected.flatMap((fuelType) =>
       Array.from({ length: updatedNozzleConfig[fuelType] }).map((_, i) => {
-        const existing = form.readings.find(r => r.fuelType === fuelType && r.nozzle === i + 1);
+        const existing = form.readings.find(
+          (r) => r.fuelType === fuelType && r.nozzle === i + 1
+        );
         return {
           fuelType,
           nozzle: i + 1,
-          closing: existing?.closing || ''
+          closing: existing?.closing || "",
         };
       })
     );
@@ -81,28 +92,30 @@ const CreateUserForm = () => {
       ...prev,
       fuelTypes: selected,
       nozzleConfig: updatedNozzleConfig,
-      readings: newReadings
+      readings: newReadings,
     }));
   };
 
   const handleNozzleCountChange = (fuelType, count) => {
     const nozzleCount = parseInt(count);
     const updatedReadings = [
-      ...form.readings.filter(r => r.fuelType !== fuelType),
+      ...form.readings.filter((r) => r.fuelType !== fuelType),
       ...Array.from({ length: nozzleCount }).map((_, i) => {
-        const existing = form.readings.find(r => r.fuelType === fuelType && r.nozzle === i + 1);
+        const existing = form.readings.find(
+          (r) => r.fuelType === fuelType && r.nozzle === i + 1
+        );
         return {
           fuelType,
           nozzle: i + 1,
-          closing: existing?.closing || ''
+          closing: existing?.closing || "",
         };
-      })
+      }),
     ];
 
     setForm((prev) => ({
       ...prev,
       nozzleConfig: { ...prev.nozzleConfig, [fuelType]: nozzleCount },
-      readings: updatedReadings
+      readings: updatedReadings,
     }));
   };
 
@@ -112,18 +125,18 @@ const CreateUserForm = () => {
         ? { ...r, closing: value }
         : r
     );
-    setForm(prev => ({ ...prev, readings: updated }));
+    setForm((prev) => ({ ...prev, readings: updated }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const payload = {
       ...form,
-      readings: form.readings.map(r => ({
+      readings: form.readings.map((r) => ({
         fuelType: r.fuelType,
         nozzle: r.nozzle,
-        closing: Number(r.closing || 0)
-      }))
+        closing: Number(r.closing || 0),
+      })),
     };
 
     delete payload.nozzleConfig;
@@ -137,154 +150,228 @@ const CreateUserForm = () => {
       ? await editUser(id, payload)
       : await createUser(payload);
 
-    if (success) navigate('/admin-users');
+    if (success) navigate("/admin-users");
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10">
-      <Card className="bg-white shadow-md border border-gray-200 rounded-xl">
-        <CardContent className="p-6 space-y-6">
-          <h2 className="text-2xl font-bold text-gray-800">
-            {isEdit ? 'Edit User' : 'Create New User'}
-          </h2>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <Label>Username</Label>
-              <Input
-                name="username"
-                value={form.username}
-                onChange={handleChange}
-                required
-                className="bg-gray-50"
-              />
+    <div className="max-w-2xl mx-auto p-6">
+      <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
+        <CardContent className="p-6">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight">
+                {isEdit ? "Edit User" : "Create New User"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {isEdit
+                  ? "Update user information and permissions"
+                  : "Add a new user to the system"}
+              </p>
             </div>
 
-            {!isEdit && (
-              <div>
-                <Label>Password</Label>
-                <Input
-                  name="password"
-                  type="password"
-                  value={form.password}
-                  onChange={handleChange}
-                  required
-                  className="bg-gray-50"
-                />
-              </div>
-            )}
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Username</Label>
+                  <Input
+                    name="username"
+                    value={form.username}
+                    onChange={handleChange}
+                    required
+                    className="bg-background"
+                  />
+                </div>
 
-            {isEdit && (
-              <div>
-                <Label>New Password (optional)</Label>
-                <Input
-                  name="password"
-                  type="password"
-                  value={form.password}
-                  onChange={handleChange}
-                  placeholder="Leave blank to keep current"
-                  className="bg-gray-50"
-                />
-              </div>
-            )}
-
-            <div>
-              <Label>Station Name</Label>
-              <Input
-                name="stationName"
-                value={form.stationName}
-                onChange={handleChange}
-                required
-                className="bg-gray-50"
-              />
-            </div>
-
-            <div>
-              <Label>Role</Label>
-              <select
-                name="role"
-                value={form.role}
-                onChange={handleChange}
-                className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm"
-              >
-                <option value="worker">Worker</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                name="isActive"
-                checked={form.isActive}
-                onChange={handleChange}
-                className="w-4 h-4"
-              />
-              <Label className="text-sm">Active</Label>
-            </div>
-
-            {form.role === 'worker' && (
-              <div className="space-y-4">
-                <Label className="block text-sm font-medium text-gray-700">Fuel Types</Label>
-                <MultiSelect
-                  options={allFuelTypes}
-                  value={form.fuelTypes}
-                  onChange={handleFuelSelect}
-                  placeholder="Select fuel types"
-                />
-
-                {form.fuelTypes.map((fuelType) => (
-                  <div key={fuelType} className="border p-3 rounded-md bg-gray-50 space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">
-                      Nozzles for {fuelType}
+                {!isEdit ? (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Password</Label>
+                    <Input
+                      name="password"
+                      type="password"
+                      value={form.password}
+                      onChange={handleChange}
+                      required
+                      className="bg-background"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">
+                      New Password (optional)
                     </Label>
                     <Input
-                      type="number"
-                      min={1}
-                      value={form.nozzleConfig[fuelType] || 1}
-                      onChange={(e) => handleNozzleCountChange(fuelType, e.target.value)}
-                      className="w-24 bg-white"
+                      name="password"
+                      type="password"
+                      value={form.password}
+                      onChange={handleChange}
+                      placeholder="Leave blank to keep current"
+                      className="bg-background"
                     />
-
-                    {form.readings
-                      .filter(r => r.fuelType === fuelType)
-                      .sort((a, b) => a.nozzle - b.nozzle)
-                      .map(r => (
-                        <div key={`${fuelType}-nozzle-${r.nozzle}`}>
-                          <Label className="text-sm">
-                            Closing Reading - Nozzle {r.nozzle}
-                          </Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={r.closing}
-                            onChange={(e) =>
-                              handleReadingChange(fuelType, r.nozzle, e.target.value)
-                            }
-                            className="bg-white border-gray-300"
-                          />
-                        </div>
-                      ))}
                   </div>
-                ))}
+                )}
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Station Name</Label>
+                  <Input
+                    name="stationName"
+                    value={form.stationName}
+                    onChange={handleChange}
+                    required
+                    className="bg-background"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Role</Label>
+                  <select
+                    name="role"
+                    value={form.role}
+                    onChange={handleChange}
+                    className="w-full h-10 px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="worker">Worker</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
               </div>
-            )}
 
-            {(createError || updateError) && (
-              <p className="text-red-600 text-sm font-medium">{createError || updateError}</p>
-            )}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="isActive"
+                  checked={form.isActive}
+                  onChange={handleChange}
+                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <Label className="text-sm font-medium">Active Account</Label>
+              </div>
 
-            <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={() => navigate('/admin-users')}>
-                Back
-              </Button>
-              <Button type="submit" disabled={isCreating || isUpdating}>
-                {isEdit
-                  ? isUpdating ? 'Updating...' : 'Update User'
-                  : isCreating ? 'Creating...' : 'Create User'}
-              </Button>
-            </div>
-          </form>
+              {form.role === "worker" && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Fuel Types</Label>
+                    <MultiSelect
+                      options={allFuelTypes}
+                      value={form.fuelTypes}
+                      onChange={handleFuelSelect}
+                      placeholder="Select fuel types"
+                    />
+                  </div>
+
+                  {form.fuelTypes.map((fuelType) => (
+                    <Card key={fuelType} className="bg-muted/50">
+                      <CardContent className="p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">
+                            {fuelType} Configuration
+                          </Label>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-sm">
+                              Number of Nozzles:
+                            </Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={form.nozzleConfig[fuelType] || 1}
+                              onChange={(e) => {
+                                const value = getSafePositive(e.target.value);
+                                handleNozzleCountChange(
+                                  fuelType,
+                                  value === "" ? "1" : value
+                                );
+                              }}
+                              onBlur={(e) => {
+                                if (
+                                  e.target.value === "" ||
+                                  Number(e.target.value) <= 0
+                                ) {
+                                  handleNozzleCountChange(fuelType, "1");
+                                }
+                              }}
+                              className="w-24 bg-background"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {form.readings
+                            .filter((r) => r.fuelType === fuelType)
+                            .sort((a, b) => a.nozzle - b.nozzle)
+                            .map((r) => (
+                              <div
+                                key={`${fuelType}-nozzle-${r.nozzle}`}
+                                className="space-y-2"
+                              >
+                                <Label className="text-sm font-medium">
+                                  Nozzle {r.nozzle} - Closing Reading
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={r.closing}
+                                  onChange={(e) =>
+                                    handleReadingChange(
+                                      fuelType,
+                                      r.nozzle,
+                                      getSafePositive(e.target.value)
+                                    )
+                                  }
+                                  onBlur={(e) => {
+                                    if (
+                                      e.target.value === "" ||
+                                      Number(e.target.value) <= 0
+                                    ) {
+                                      handleReadingChange(
+                                        fuelType,
+                                        r.nozzle,
+                                        "1"
+                                      );
+                                    }
+                                  }}
+                                  className="bg-background"
+                                />
+                              </div>
+                            ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {(createError || updateError) && (
+                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Icons.warning className="h-4 w-4" />
+                    <span>{createError || updateError}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigate("/admin-users")}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isCreating || isUpdating}
+                  className="min-w-[100px]"
+                >
+                  {isEdit
+                    ? isUpdating
+                      ? "Updating..."
+                      : "Update User"
+                    : isCreating
+                    ? "Creating..."
+                    : "Create User"}
+                </Button>
+              </div>
+            </form>
+          </div>
         </CardContent>
       </Card>
     </div>

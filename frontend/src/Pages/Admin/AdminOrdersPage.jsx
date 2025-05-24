@@ -17,12 +17,30 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useDefPayOrders } from "@/Hooks/DefpayorderHooks/useDefPayOrders";
 import { useDeleteDefPayOrder } from "@/Hooks/DefpayorderHooks/useDeleteDefPayOrder";
 import { useNavigate } from "react-router-dom";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const useDebounce = (value, delay) => {
   const [debounced, setDebounced] = useState(value);
@@ -40,17 +58,16 @@ const AdminOrdersPage = () => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState({
     fuelType: "",
-    status: "",
     dueInDays: "",
     paymentType: "",
   });
-  const [activeTab, setActiveTab] = useState("deferal");
+  const [activeTab, setActiveTab] = useState("creditSale");
   const [page, setPage] = useState(1);
   const [orders, setOrders] = useState([]);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showSkeletons, setShowSkeletons] = useState(false);
-  const initializedTabs = useRef({ deferal: true, payment: false });
+  const initializedTabs = useRef({ creditSale: true, creditBack: false });
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -64,11 +81,10 @@ const AdminOrdersPage = () => {
     setLoading(true);
     try {
       const keywords = [debouncedSearch];
-      if (activeTab === "deferal") {
+      if (activeTab === "creditSale") {
         if (filter.fuelType) keywords.push(filter.fuelType);
-        if (filter.status) keywords.push(filter.status);
         if (filter.dueInDays) keywords.push(`duein:${filter.dueInDays}`);
-      } else if (activeTab === "payment") {
+      } else if (activeTab === "creditBack") {
         if (filter.paymentType) keywords.push(filter.paymentType);
       }
 
@@ -90,12 +106,12 @@ const AdminOrdersPage = () => {
     setSearch("");
     setPage(1);
     setActiveTab(tab);
-    setFilter({ fuelType: "", status: "", dueInDays: "", paymentType: "" });
+    setFilter({ fuelType: "", dueInDays: "", paymentType: "" });
     initializedTabs.current[tab] = true;
   };
 
   const renderFilters = () => {
-    return activeTab === "deferal" ? (
+    return activeTab === "creditSale" ? (
       <>
         <Select
           onValueChange={(val) =>
@@ -110,23 +126,6 @@ const AdminOrdersPage = () => {
           </SelectTrigger>
           <SelectContent>
             {["All", "HSD", "MS", "XG"].map((v) => (
-              <SelectItem key={v} value={v}>
-                {v}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          onValueChange={(val) =>
-            setFilter((prev) => ({ ...prev, status: val === "All" ? "" : val }))
-          }
-        >
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            {["All", "unpaid", "partial", "paid"].map((v) => (
               <SelectItem key={v} value={v}>
                 {v}
               </SelectItem>
@@ -178,203 +177,232 @@ const AdminOrdersPage = () => {
   };
 
   const renderTable = (type) => (
-    <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm">
-      <Table className="min-w-full table-fixed divide-y divide-gray-200">
-        <TableHeader className="bg-gray-50 text-gray-700 text-sm font-semibold">
-          <TableRow>
-            <TableHead className="px-4 py-2">Code</TableHead>
-            <TableHead className="px-4 py-2">Name</TableHead>
-            {type === "deferal" ? (
-              <>
-                <TableHead className="px-4 py-2">Fuel</TableHead>
-                <TableHead className="px-4 py-2">Qty (L)</TableHead>
-                <TableHead className="px-4 py-2">Amount</TableHead>
-                <TableHead className="px-4 py-2">Due Date</TableHead>
-                <TableHead className="px-4 py-2">Station</TableHead>
-              </>
-            ) : (
-              <>
-                <TableHead className="px-4 py-2">Amount</TableHead>
-                <TableHead className="px-4 py-2">Payment Type</TableHead>
-              </>
-            )}
-            <TableHead className="px-4 py-2">Submitted By</TableHead>
-            <TableHead className="px-4 py-2 text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody className="bg-white divide-y divide-gray-100 text-sm">
-          {loading && showSkeletons
-            ? [...Array(5)].map((_, i) => (
-                <TableRow key={`sk-${type}-${i}`}>
-                  {[...Array(type === "deferal" ? 9 : 6)].map((_, j) => (
-                    <TableCell key={j} className="px-4 py-3">
-                      <Skeleton className="h-4 w-full rounded" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            : orders.map((order, i) => (
-                <TableRow
-                  key={`${order._id}-${i}`}
-                  className="hover:bg-gray-100 cursor-pointer"
-                  onClick={() => navigate(`/order-summary/${order._id}`)}
-                >
-                  <TableCell className="px-4 py-3">{order.code}</TableCell>
-                  <TableCell className="px-4 py-3">{order.actName}</TableCell>
-                  {type === "deferal" ? (
-                    <>
-                      <TableCell className="px-4 py-3">
-                        {order.fuelType}
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        {order.quantity}
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        ₹{Number(order.amount).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        {new Date(order.dueDate).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>{order.user?.stationName || "N/A"}</TableCell>
-                    </>
-                  ) : (
-                    <>
-                      <TableCell className="px-4 py-3">
-                        ₹{Number(order.amount).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        {order.paymentType}
-                      </TableCell>
-                    </>
-                  )}
-                  <TableCell className="px-4 py-3">
-                    {order.submittedByName}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-right">
-                    <div
-                      className="flex justify-end gap-2"
-                      onClick={(e) => e.stopPropagation()}
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {type === "creditSale" ? "Credit Sales" : "Credit Backs"}
+        </CardTitle>
+        <CardDescription>
+          {type === "creditSale"
+            ? "List of all credit sales with their details"
+            : "List of all credit backs with their details"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Name</TableHead>
+                {type === "creditSale" ? (
+                  <>
+                    <TableHead>Fuel</TableHead>
+
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Station</TableHead>
+                  </>
+                ) : (
+                  <>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Type</TableHead>
+                  </>
+                )}
+                <TableHead>Submitted By</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && showSkeletons
+                ? [...Array(5)].map((_, i) => (
+                    <TableRow key={`sk-${type}-${i}`}>
+                      {[...Array(type === "creditSale" ? 9 : 6)].map((_, j) => (
+                        <TableCell key={j}>
+                          <Skeleton className="h-4 w-full" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                : orders.map((order) => (
+                    <TableRow
+                      key={order._id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/order-summary/${order._id}`)}
                     >
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/edit-order/${order._id}`);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={isDeleting}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          const confirm = window.confirm("Are you sure?");
-                          if (!confirm) return;
-                          await deleteOrder(order._id);
-                          fetchFilteredOrders();
-                        }}
-                      >
-                        {isDeleting ? "Deleting..." : "Delete"}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-        </TableBody>
-      </Table>
-    </div>
+                      <TableCell>
+                        <span className="font-mono">{order.code}</span>
+                      </TableCell>
+                      <TableCell>{order.actName}</TableCell>
+                      {type === "creditSale" ? (
+                        <>
+                          <TableCell>
+                            <Badge variant="outline">{order.fuelType}</Badge>
+                          </TableCell>
+                          <TableCell>₹{order.amount.toFixed(2)}</TableCell>
+                          <TableCell>
+                            {new Date(order.dueDate).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            {order.user?.stationName || "N/A"}
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell>₹{order.amount.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{order.paymentType}</Badge>
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell>{order.submittedByName}</TableCell>
+                      <TableCell className="text-right">
+                        <div
+                          className="flex justify-end gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/edit-order/${order._id}`);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={isDeleting}
+                              >
+                                {isDeleting ? "Deleting..." : "Delete"}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Are you sure?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. This will
+                                  permanently delete the order.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={async () => {
+                                    await deleteOrder(order._id);
+                                    fetchFilteredOrders();
+                                  }}
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 
   return (
-    <div className="p-6 bg-muted min-h-screen">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Deferral / Payment Orders
-        </h1>
-
-        <Tabs
-          value={activeTab}
-          onValueChange={handleTabChange}
-          className="space-y-6"
-        >
-          <Card>
-            <CardContent className="pt-6 pb-4 space-y-4">
-              <div className="flex flex-wrap md:flex-row items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                  <Input
-                    placeholder="Search by code, name, or submitter..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-[240px]"
-                  />
-                  {renderFilters()}
-                </div>
-                <Button onClick={() => navigate("/create-order")}>
-                  + Create New Order
-                </Button>
-              </div>
-
-              <TabsList className="w-full justify-start">
-                <TabsTrigger value="deferal">Deferals</TabsTrigger>
-                <TabsTrigger value="payment">Payments</TabsTrigger>
-              </TabsList>
-            </CardContent>
-          </Card>
-
-          <TabsContent value="deferal">
-            {renderTable("deferal")}
-            <div className="flex justify-between items-center gap-4 mt-4 px-1">
-              <span className="text-sm text-muted-foreground">Page {page}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                  disabled={page === 1}
-                >
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={!hasMore}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="payment">
-            {renderTable("payment")}
-            <div className="flex justify-between items-center gap-4 mt-4 px-1">
-              <span className="text-sm text-muted-foreground">Page {page}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                  disabled={page === 1}
-                >
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={!hasMore}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+    <div className="p-6 space-y-6">
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold tracking-tight">Orders</h1>
+        <p className="text-muted-foreground">
+          Manage credit sales and credit backs
+        </p>
       </div>
+
+      <Tabs
+        value={activeTab}
+        onValueChange={handleTabChange}
+        className="space-y-6"
+      >
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap md:flex-row items-center justify-between gap-4 mb-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <Input
+                  placeholder="Search by code, name, or submitter..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-[240px]"
+                />
+                {renderFilters()}
+              </div>
+              <Button onClick={() => navigate("/create-order")}>
+                + Create New Order
+              </Button>
+            </div>
+
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="creditSale">Credit Sales</TabsTrigger>
+              <TabsTrigger value="creditBack">Credit Backs</TabsTrigger>
+            </TabsList>
+          </CardContent>
+        </Card>
+
+        <TabsContent value="creditSale">
+          {renderTable("creditSale")}
+          <div className="flex justify-between items-center gap-4 mt-4">
+            <span className="text-sm text-muted-foreground">Page {page}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasMore}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="creditBack">
+          {renderTable("creditBack")}
+          <div className="flex justify-between items-center gap-4 mt-4">
+            <span className="text-sm text-muted-foreground">Page {page}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasMore}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

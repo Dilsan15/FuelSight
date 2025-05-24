@@ -1,6 +1,6 @@
 // === /src/Hooks/ShiftHooks/useSubmitShift.js ===
 import { useState } from "react";
-import axios from "@/APIs/shiftAPI"; // assumes centralized axios instance is already configured
+import shiftAPI from "@/APIs/shiftAPI";
 import { useAuthContext } from "../AuthHooks/useAuthContext";
 
 export const useSubmitShift = () => {
@@ -8,44 +8,37 @@ export const useSubmitShift = () => {
   const [error, setError] = useState(null);
   const [response, setResponse] = useState(null);
 
-  const {user} = useAuthContext()
+  const { user } = useAuthContext();
 
-  const submitShift = async ({ shift, deferals = [], payments = [], token }) => {
+  const submitShift = async ({ shift, creditSales = [], creditBack = [] }) => {
     setIsSubmitting(true);
     setError(null);
     setResponse(null);
 
     try {
-      const res = await axios.post(
+      const res = await shiftAPI.post(
         "/submit",
-        {
-          shift,
-          deferals,
-          payments
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${user?.token}`
-          }
-        }
+        { shift, creditSales, creditBack },
+        { headers: { Authorization: `Bearer ${user?.token}` } }
       );
 
       setResponse(res.data);
-      return res.data;
+      return res.data;               // resolves on success
     } catch (err) {
+      // Pass the backend message to the caller
       const msg =
-        err.response?.data?.error || "❌ Something went wrong submitting the shift.";
+        err.response?.data?.error ||
+        "❌ Something went wrong submitting the shift.";
       setError(msg);
-      throw new Error(msg); // optional: rethrow to handle it outside
+      throw new Error(msg);
     } finally {
       setIsSubmitting(false);
+
+      /* 🔽  LOG OUT ON *EVERY* EXIT  🔽 */
+      localStorage.clear();          // remove token, user, any other keys
+      window.location.href = "/login";   // hard-redirect to login
     }
   };
 
-  return {
-    submitShift,
-    isSubmitting,
-    error,
-    response
-  };
+  return { submitShift, isSubmitting, error, response };
 };

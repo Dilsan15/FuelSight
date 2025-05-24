@@ -1,38 +1,88 @@
-import { useEffect, useState } from 'react';
-import dayrateAPI from '@/APIs/dayrateAPI';
-import { useAuthContext } from '../AuthHooks/useAuthContext';
+import { useEffect, useState } from "react";
+import dayrateAPI from "@/APIs/dayrateAPI";
+import { useAuthContext } from "../AuthHooks/useAuthContext";
 
 export const useDayRates = () => {
-  const {user} = useAuthContext()
+  const { user } = useAuthContext();
   const [dayRates, setDayRates] = useState(null);
+  const [rateHistory, setRateHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchDayRates = async () => {
+    const fetchData = async () => {
       try {
-          
-        
-        const res = await dayrateAPI.get('/latest', {
+        // Fetch latest rates
+        const latestRes = await dayrateAPI.get("/latest", {
           headers: {
-            Authorization: `Bearer ${user.token}`,
-  
-          }
+            Authorization: `Bearer ${user?.token}`,
+          },
         });
-        
-        if (res.status === 200){
-          setDayRates(res.data);
+
+        // Fetch rate history
+        const historyRes = await dayrateAPI.get("/search", {
+          headers: {
+            Authorization: `Bearer ${user?.token}`,
+          },
+          params: {
+            limit: 50,
+            skip: 0,
+          },
+        });
+
+        if (latestRes.status === 200) {
+          setDayRates({
+            ...latestRes.data,
+            history: historyRes.data.results || [],
+          });
+          setRateHistory(historyRes.data.results || []);
         }
-        
       } catch (err) {
-        setError(err.message || 'Failed to load day rates');
+        console.error("Error fetching day rates:", err);
+        setError(err.message || "Failed to load day rates");
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchDayRates();
-  }, []);
+    if (user) {
+      fetchData();
+    }
+  }, [user]);
 
-  return { dayRates, isLoading, error };
+  const refreshRates = async () => {
+    setIsLoading(true);
+    try {
+      const latestRes = await dayrateAPI.get("/latest", {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      });
+
+      const historyRes = await dayrateAPI.get("/search", {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+        params: {
+          limit: 50,
+          skip: 0,
+        },
+      });
+
+      if (latestRes.status === 200) {
+        setDayRates({
+          ...latestRes.data,
+          history: historyRes.data.results || [],
+        });
+        setRateHistory(historyRes.data.results || []);
+      }
+    } catch (err) {
+      console.error("Error refreshing day rates:", err);
+      setError(err.message || "Failed to refresh day rates");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { dayRates, rateHistory, isLoading, error, refreshRates };
 };

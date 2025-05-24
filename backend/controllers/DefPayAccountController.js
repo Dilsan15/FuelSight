@@ -180,11 +180,16 @@ const getDefPayAccount = async (req, res) => {
 
 
 const getDefPayAccounts = async (req, res) => {
-  const { page = 1, limit = 10, search = '', searchBy = 'all', sortBy = 'createdAt', order = 'desc' } = req.query;
-  let query = {};
 
-  const trimmedSearch = search.trim();
+  // Convert and sanitize query parameters
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 10;
+  const search = (req.query.search || '').trim();
+  const searchBy = req.query.searchBy || 'all';
+  const sortBy = ['balance', 'createdAt'].includes(req.query.sortBy) ? req.query.sortBy : 'createdAt';
+  const order = req.query.order === 'asc' ? 1 : -1;
 
+  // Determine searchable fields
   const fields = (() => {
     switch (searchBy) {
       case 'name': return ['firstName', 'lastName'];
@@ -196,8 +201,10 @@ const getDefPayAccounts = async (req, res) => {
     }
   })();
 
-  if (trimmedSearch) {
-    const words = trimmedSearch.split(/\s+/).filter(Boolean);
+  // Construct search query
+  let query = {};
+  if (search) {
+    const words = search.split(/\s+/).filter(Boolean);
     if (words.length === 1) {
       const regex = new RegExp(words[0], 'i');
       query = { $or: fields.map(field => ({ [field]: regex })) };
@@ -211,30 +218,28 @@ const getDefPayAccounts = async (req, res) => {
     }
   }
 
-  const sortField = ['balance', 'createdAt'].includes(sortBy) ? sortBy : 'createdAt';
-  const sortOrder = order === 'asc' ? 1 : -1;
-
   try {
     const total = await DefPayAccount.countDocuments(query);
     const accounts = await DefPayAccount.find(query)
       .populate('paymentHistory.defPayOrder')
-      .sort({ [sortField]: sortOrder })
+      .sort({ [sortBy]: order })
       .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .limit(limit);
 
     const hasMore = page * limit < total;
 
     res.status(200).json({
       data: accounts,
       total,
-      page: Number(page),
-      hasMore,
+      page,
+      hasMore
     });
   } catch (err) {
     console.error('Fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch accounts.' });
   }
 };
+
 
 module.exports = {
   createDefPayAccount,

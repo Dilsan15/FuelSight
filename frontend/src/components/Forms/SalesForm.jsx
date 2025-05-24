@@ -3,34 +3,52 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatINR } from "@/utils/formatting"; // 💰 Formatter
+import {
+  getSafePositive,
+  enforceOneIfEmptyOrZero,
+} from "@/utils/handleSafeInput";
 
 const SalesForm = ({
   formData,
   setFormData,
   onNext,
   onBack,
-  deferals,
-  payments,
+  creditSales,
+  creditBack,
 }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
+    const raw = value.replace(/,/g, "");
     setFormData({
       ...formData,
       sales: {
         ...formData.sales,
-        [name]: value,
+        [name]: getSafePositive(raw),
       },
     });
   };
 
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    const raw = value.replace(/,/g, "");
+    if (raw === "" || Number(raw) <= 0) {
+      setFormData({
+        ...formData,
+        sales: {
+          ...formData.sales,
+          [name]: "1",
+        },
+      });
+    }
+  };
+
   useEffect(() => {
-    const deferralTotal = (deferals || []).reduce((sum, d) => {
-      const litres = parseFloat(d.litres || 0);
-      const rate = parseFloat(formData.dayRate?.[d.fuelType] || 0);
-      return sum + litres * rate;
+    const creditSalesTotal = (creditSales || []).reduce((sum, d) => {
+      return sum + parseFloat(d.amount || 0);
     }, 0);
 
-    const advancePaymentTotal = (payments || []).reduce((sum, p) => {
+    const creditBackTotal = (creditBack || []).reduce((sum, p) => {
       return sum + parseFloat(p.amount || 0);
     }, 0);
 
@@ -38,107 +56,123 @@ const SalesForm = ({
       ...formData,
       sales: {
         ...formData.sales,
-        deferralTotal: deferralTotal.toFixed(2),
-        advancePaymentTotal: advancePaymentTotal.toFixed(2),
+        creditSalesTotal: creditSalesTotal.toFixed(2),
+        creditBackTotal: creditBackTotal.toFixed(2),
       },
     });
-  }, [deferals, payments, formData.dayRate]);
+  }, [creditSales, creditBack]);
 
   return (
-    <Card className="p-6 space-y-6 bg-gradient-to-br from-[#fefefe] to-[#f5f5f5] border border-gray-300 shadow-xl rounded-xl">
-      <CardContent className="space-y-8">
-        <div>
-          <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
-            Sales Summary (₹)
-          </h2>
-        </div>
+    <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
+      <CardContent className="p-8">
+        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-10">
+          Sales Information
+        </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
-              Cash with Manager *
+              Cash with Manager (₹) *
             </Label>
             <Input
-              type="number"
+              type="text"
               name="cashWithManager"
-              value={formData.sales?.cashWithManager ?? ""}
+              inputMode="numeric"
+              min={1}
+              value={formatINR(formData.sales?.cashWithManager ?? "")}
               onChange={handleChange}
-              
-              className="bg-gray-50 border-gray-300"
+              onBlur={handleBlur}
+              className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
-          <div>
+
+          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
-              QR Transfer Payments Total *
+              QR Transfer (₹) *
             </Label>
             <Input
-              type="number"
+              type="text"
               name="qrTransfer"
-              value={formData.sales?.qrTransfer ?? ""}
+              inputMode="numeric"
+              min={1}
+              value={formatINR(formData.sales?.qrTransfer ?? "")}
               onChange={handleChange}
-              className="bg-gray-50 border-gray-300"
+              onBlur={handleBlur}
+              className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
-          <div>
+
+          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
-              Card Payments Total *
+              Card (₹) *
             </Label>
             <Input
-              type="number"
+              type="text"
               name="card"
-              value={formData.sales?.card ?? ""}
+              inputMode="numeric"
+              min={1}
+              value={formatINR(formData.sales?.card ?? "")}
               onChange={handleChange}
-              className="bg-gray-50 border-gray-300"
+              onBlur={handleBlur}
+              className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
-          <div>
+
+          <div className="space-y-3">
             <Label className="text-sm font-semibold text-red-700">
-              Lost or Stolen Cash *
+              Lost or Stolen Cash (₹) *
             </Label>
             <Input
-              type="number"
+              type="text"
               name="lost"
-              value={formData.sales?.lost ?? ""}
+              inputMode="numeric"
+              min={1}
+              value={formatINR(formData.sales?.lost ?? "")}
               onChange={handleChange}
-              className="bg-gray-50 border-gray-300"
+              onBlur={handleBlur}
+              className="bg-gray-50 border-gray-300 h-11 border-red-200 focus:border-red-400 focus:ring-red-400"
             />
           </div>
 
           {/* Read-Only Totals */}
-          <div>
+          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
-              Deferral Amount Total
+              Credit Sales Total (₹)
             </Label>
             <Input
-              type="number"
-              name="deferralTotal"
-              value={formData.sales?.deferralTotal ?? ""}
+              type="text"
               readOnly
-              className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed"
+              value={formatINR(formData.sales?.creditSalesTotal ?? "")}
+              className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed h-11"
             />
           </div>
-          <div>
+
+          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
-              Advance Payment Total
+              Credit Back Total (₹)
             </Label>
             <Input
-              type="number"
-              name="advancePaymentTotal"
-              value={formData.sales?.advancePaymentTotal ?? ""}
+              type="text"
               readOnly
-              className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed"
+              value={formatINR(formData.sales?.creditBackTotal ?? "")}
+              className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed h-11"
             />
           </div>
         </div>
 
-        <div className="pt-4 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onBack}>
+        <div className="pt-10 flex justify-end gap-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onBack}
+            className="h-11 px-6"
+          >
             Back
           </Button>
           <Button
             type="button"
-            className="bg-black text-white hover:bg-gray-800"
             onClick={onNext}
+            className="h-11 px-6 bg-black text-white hover:bg-gray-800"
           >
             Next
           </Button>

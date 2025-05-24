@@ -1,5 +1,5 @@
 import axios from "axios";
 
 export default axios.create({
-    baseURL: "https://petrol-pump-accounting.onrender.com/api/users"
+    baseURL: "http://localhost:5001/api/users"
 });

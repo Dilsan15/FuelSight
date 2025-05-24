@@ -1,18 +1,17 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatINR } from "@/utils/formatting";
 
 const ReviewForm = ({ formData, onNext, onBack }) => {
-  const { shift, deferals, payments } = formData;
+  const { shift = {}, creditSales = [], creditBack = [] } = formData;
+
   const {
-    submittedByName,
-    date,
-    dayRate = {},
     sales = {},
     readings = [],
     lubeSales = [],
-    thrownOutFuel = [],
-    timeType = "",
+    nozzleTesting = [],
+    dayRate = {},
   } = shift;
 
   const groupedReadings = readings.reduce((acc, curr) => {
@@ -21,216 +20,365 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
     return acc;
   }, {});
 
+  const nozzleTestingMap = nozzleTesting.reduce((acc, entry) => {
+    acc[entry.fuelType] = parseFloat(entry.quantity || 0);
+    return acc;
+  }, {});
+
+  let fuelRevenue = 0;
+  for (const [fuelType, entries] of Object.entries(groupedReadings)) {
+    const rate = parseFloat(parseFloat(dayRate[fuelType] || 0).toFixed(2));
+    const totalVolume = entries.reduce(
+      (sum, r) =>
+        sum + (parseFloat(r.closing || 0) - parseFloat(r.opening || 0)),
+      0
+    );
+    const netVolume = totalVolume - (nozzleTestingMap[fuelType] || 0);
+    fuelRevenue += parseFloat((netVolume * rate).toFixed(2));
+  }
+
+  const lubeRevenue = parseFloat(
+    lubeSales
+      .reduce(
+        (sum, l) => sum + parseFloat(parseFloat(l.amount || 0).toFixed(2)),
+        0
+      )
+      .toFixed(2)
+  );
+  const lost = parseFloat(parseFloat(sales.lost || 0).toFixed(2));
+  const total = parseFloat((fuelRevenue + lubeRevenue - lost).toFixed(2));
+
   return (
-    <Card className="p-6 space-y-6 bg-gradient-to-br from-[#fefefe] to-[#f5f5f5] border border-gray-300 shadow-xl rounded-xl">
-      <CardContent className="space-y-8">
-        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
-          Review Your Submission
+    <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
+      <CardContent className="p-8">
+        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-10">
+          Review Shift Details
         </h2>
 
-        <div className="space-y-6 text-sm text-gray-800">
-          <section>
-            <h3 className="text-xl font-semibold mb-2">Shift Info</h3>
-            <div className="bg-white p-4 rounded-lg shadow border">
-              <p>
-                <strong>Worker:</strong> {submittedByName}
-              </p>
-              <p>
-                <strong>Date:</strong> {date}
-              </p>
-              <p>
-                <strong>Shift Type:</strong> {timeType}
-              </p>
+        <div className="space-y-10">
+          {/* === Fuel Rates === */}
+          <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+            <h3 className="text-2xl font-bold mb-6 text-gray-800">
+              Fuel Rates
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {Object.entries(dayRate).map(([fuel, rate]) => (
+                <div
+                  key={fuel}
+                  className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
+                >
+                  <div className="text-sm font-medium text-gray-600">
+                    {fuel}
+                  </div>
+                  <div className="text-xl font-semibold mt-1">₹{rate}/L</div>
+                </div>
+              ))}
             </div>
           </section>
 
-          <section>
-            <h3 className="text-xl font-semibold mb-2">Fuel Day Rates</h3>
-            <div className="bg-white p-4 rounded-lg shadow border">
-              <ul className="list-disc list-inside space-y-1">
-                {Object.entries(dayRate).map(([fuel, rate]) => (
-                  <li key={fuel}>
-                    <strong>{fuel}:</strong> ₹{rate}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-
-          {thrownOutFuel.length > 0 && (
-            <section>
-              <h3 className="text-xl font-semibold mb-2">Thrown Out Fuel</h3>
-              <div className="bg-white p-4 rounded-lg shadow border">
-                <ul className="list-disc list-inside space-y-1">
-                  {thrownOutFuel.map((t, i) => (
-                    <li key={i}>
-                      <strong>{t.fuelType}:</strong> {t.quantity} L
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-          )}
-
-          {Object.keys(groupedReadings).length > 0 && (
-            <section>
-              <h3 className="text-xl font-semibold mb-2">Fuel Readings</h3>
-              <div className="space-y-4">
-                {Object.entries(groupedReadings).map(
-                  ([fuelType, entries], idx) => (
-                    <div
-                      key={idx}
-                      className="bg-white p-4 rounded-lg shadow border"
-                    >
-                      <h4 className="text-lg font-semibold mb-2">{fuelType}</h4>
-                      <ul className="space-y-1">
-                        {entries.map((entry, i) => {
-                          const diff =
-                            (entry.closing ?? 0) - (entry.opening ?? 0);
-                          return (
-                            <li key={`${entry.fuelType}-${i}`}>
-                              <strong>Opening:</strong> {entry.opening} | {" "}
-                              <strong>Closing:</strong> {entry.closing} | {" "}
-                              <strong>Sold:</strong> {diff}
-                            </li>
-                          );
-                        })}
-                      </ul>
+          {/* === Meter Readings === */}
+          <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+            <h3 className="text-2xl font-bold mb-6 text-gray-800">
+              Meter Readings
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {readings.map((r, i) => (
+                <div
+                  key={i}
+                  className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
+                >
+                  <div className="text-base font-semibold text-gray-800 mb-4">
+                    {r.fuelType} - Nozzle {r.nozzle}
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <div className="text-sm font-medium text-gray-500">
+                        Opening
+                      </div>
+                      <div className="text-lg font-medium text-gray-700 mt-1">
+                        {r.opening}
+                      </div>
                     </div>
-                  )
-                )}
-              </div>
-            </section>
-          )}
-
-          {lubeSales.length > 0 && (
-            <section>
-              <h3 className="text-xl font-semibold mb-2">Lube/Mobil Sales</h3>
-              <div className="space-y-4">
-                {lubeSales.map((l, i) => (
-                  <div
-                    key={i}
-                    className="bg-white p-4 rounded-lg shadow border"
-                  >
-                    <p>
-                      <strong>Description:</strong> {l.description}
-                    </p>
-                    <p>
-                      <strong>Amount:</strong> ₹{l.amount}
-                    </p>
-                    <p>
-                      <strong>Quantity:</strong> {l.quantity}
-                    </p>
+                    <div>
+                      <div className="text-sm font-medium text-gray-500">
+                        Closing
+                      </div>
+                      <div className="text-lg font-medium text-gray-700 mt-1">
+                        {r.closing}
+                      </div>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section>
-            <h3 className="text-xl font-semibold mb-2">Sales Summary</h3>
-            <div className="bg-white p-4 rounded-lg shadow border">
-              <ul className="list-disc list-inside space-y-1">
-                <li>
-                  <strong>Cash with Manager:</strong> ₹{sales.cashWithManager || 0}
-                </li>
-                <li>
-                  <strong>QR Transfer:</strong> ₹{sales.qrTransfer || 0}
-                </li>
-                <li>
-                  <strong>Card:</strong> ₹{sales.card || 0}
-                </li>
-                <li>
-                  <strong>Deferral Total:</strong> ₹{sales.deferralTotal || 0}
-                </li>
-                <li>
-                  <strong>Advance Payment Total:</strong> ₹{sales.advancePaymentTotal || 0}
-                </li>
-                <li>
-                  <strong>Lost/Stolen:</strong> ₹{sales.lost || 0}
-                </li>
-              </ul>
+                </div>
+              ))}
             </div>
           </section>
 
-          {deferals.length > 0 && (
-            <section>
-              <h3 className="text-xl font-semibold mb-2">Deferals</h3>
-              <div className="space-y-4">
-                {deferals.map((d, i) => (
+          {/* === Nozzle Testing === */}
+          {nozzleTesting.length > 0 && (
+            <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+              <h3 className="text-2xl font-bold mb-6 text-gray-800">
+                Nozzle Testing
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {nozzleTesting.map((test, i) => (
                   <div
                     key={i}
-                    className="bg-white p-4 rounded-lg shadow border"
+                    className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
                   >
-                    <p>
-                      <strong>Code:</strong> {d.code}
-                    </p>
-                    <p>
-                      <strong>Fuel Type:</strong> {d.fuelType}
-                    </p>
-                    <p>
-                      <strong>Litres:</strong> {d.litres}
-                    </p>
-                    <p>
-                      <strong>Amount:</strong> ₹
-                      {d.amount ||
-                        (d.litres * (dayRate[d.fuelType] || 0)).toFixed(2)}
-                    </p>
-                    <p>
-                      <strong>Due Date:</strong> {d.dueDate}
-                    </p>
-                    {d.description && (
-                      <p>
-                        <strong>Description:</strong> {d.description}
-                      </p>
-                    )}
+                    <div className="text-base font-semibold text-gray-800">
+                      {test.fuelType}
+                    </div>
+                    <div className="text-xl font-medium text-gray-700 mt-2">
+                      {test.quantity} litres
+                    </div>
                   </div>
                 ))}
               </div>
             </section>
           )}
 
-          {payments.length > 0 && (
-            <section>
-              <h3 className="text-xl font-semibold mb-2">Payments</h3>
-              <div className="space-y-4">
-                {payments.map((p, i) => (
+          {/* === Lube Sales === */}
+          {lubeSales.length > 0 && (
+            <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+              <h3 className="text-2xl font-bold mb-6 text-gray-800">
+                Lube Sales
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {lubeSales.map((lube, i) => (
                   <div
                     key={i}
-                    className="bg-white p-4 rounded-lg shadow border"
+                    className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
                   >
-                    <p>
-                      <strong>Code:</strong> {p.code}
-                    </p>
-                    <p>
-                      <strong>Amount:</strong> ₹{p.amount}
-                    </p>
-                    <p>
-                      <strong>Method:</strong> {p.paymentType}
-                    </p>
-                    {p.note && (
-                      <p>
-                        <strong>Note:</strong> {p.note}
-                      </p>
-                    )}
+                    <div className="text-base font-semibold text-gray-800 mb-4">
+                      {lube.description}
+                    </div>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Quantity
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {lube.quantity}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Amount
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          ₹{formatINR(lube.amount)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             </section>
           )}
+
+          {/* === Credit Sales === */}
+          {creditSales.length > 0 && (
+            <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+              <h3 className="text-2xl font-bold mb-6 text-gray-800">
+                Credit Sales
+              </h3>
+              <div className="grid grid-cols-1 gap-6">
+                {creditSales.map((d, i) => (
+                  <div
+                    key={i}
+                    className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
+                  >
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Account
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {d.code}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Fuel Type
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {d.fuelType}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Amount
+                        </div>
+                        <div className="text-lg font-medium text-green-600 mt-1">
+                          ₹{formatINR(d.amount)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Due Date
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {d.dueDate}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Litres
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {(
+                            parseFloat(d.amount || 0) /
+                            parseFloat(dayRate[d.fuelType] || 1)
+                          ).toFixed(2)}{" "}
+                          L
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Rate
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          ₹{formatINR(dayRate[d.fuelType] || 0)}/L
+                        </div>
+                      </div>
+                      {d.description && (
+                        <div className="col-span-2 md:col-span-4">
+                          <div className="text-sm font-medium text-gray-500">
+                            Description
+                          </div>
+                          <div className="text-base font-medium text-gray-700 mt-1">
+                            {d.description}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* === Credit Backs === */}
+          {creditBack.length > 0 && (
+            <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+              <h3 className="text-2xl font-bold mb-6 text-gray-800">
+                Credit Backs
+              </h3>
+              <div className="grid grid-cols-1 gap-6">
+                {creditBack.map((p, i) => (
+                  <div
+                    key={i}
+                    className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
+                  >
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Account
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {p.code}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Payment Type
+                        </div>
+                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          {p.paymentType}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-500">
+                          Amount
+                        </div>
+                        <div className="text-lg font-medium text-green-600 mt-1">
+                          ₹{formatINR(p.amount)}
+                        </div>
+                      </div>
+                      {p.note && (
+                        <div className="col-span-2 md:col-span-3">
+                          <div className="text-sm font-medium text-gray-500">
+                            Note
+                          </div>
+                          <div className="text-base font-medium text-gray-700 mt-1">
+                            {p.note}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* === Sales Summary === */}
+          <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+            <h3 className="text-2xl font-bold mb-6 text-gray-800">
+              Sales Summary
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                <div className="text-base font-medium text-gray-600">
+                  Cash with Manager
+                </div>
+                <div className="text-xl font-semibold text-gray-700 mt-2">
+                  ₹{formatINR(sales.cashWithManager)}
+                </div>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                <div className="text-base font-medium text-gray-600">
+                  QR Transfer
+                </div>
+                <div className="text-xl font-semibold text-gray-700 mt-2">
+                  ₹{formatINR(sales.qrTransfer)}
+                </div>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                <div className="text-base font-medium text-gray-600">Card</div>
+                <div className="text-xl font-semibold text-gray-700 mt-2">
+                  ₹{formatINR(sales.card)}
+                </div>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-xl border border-red-200 hover:border-red-300 transition-colors">
+                <div className="text-base font-medium text-red-600">Lost</div>
+                <div className="text-xl font-semibold text-red-600 mt-2">
+                  ₹{formatINR(sales.lost)}
+                </div>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                <div className="text-base font-medium text-gray-600">
+                  Credit Sales Total
+                </div>
+                <div className="text-xl font-semibold text-gray-700 mt-2">
+                  ₹{formatINR(sales.creditSalesTotal)}
+                </div>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                <div className="text-base font-medium text-gray-600">
+                  Credit Back Total
+                </div>
+                <div className="text-xl font-semibold text-gray-700 mt-2">
+                  ₹{formatINR(sales.creditBackTotal)}
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="pt-10 flex justify-end gap-4">
           <Button
             type="button"
-            className="bg-white text-black border border-gray-300 hover:bg-gray-100"
+            variant="outline"
             onClick={onBack}
+            className="h-11 px-6"
           >
             Back
           </Button>
           <Button
-            className="bg-black text-white hover:bg-gray-800"
+            type="button"
             onClick={onNext}
+            className="h-11 px-6 bg-black text-white hover:bg-gray-800"
           >
             Next
           </Button>

@@ -14,7 +14,6 @@ const requireAuth = require('../middleware/RequireAuth');
 
 
 router.use(requireAuth)
-
 router.get('/search', getDefPayAccounts)
 router.get('/:id', getDefPayAccount)
 

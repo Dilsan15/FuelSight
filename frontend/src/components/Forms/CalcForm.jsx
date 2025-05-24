@@ -1,30 +1,45 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatINR } from "@/utils/formatting";
+
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 
 const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
-  const { shift = {}, payments = [], deferals = [] } = formData;
+  const { shift = {}, creditBack = [], creditSales = [] } = formData;
   const {
     readings = [],
-    thrownOutFuel = [],
+    nozzleTesting = [],
     lubeSales = [],
     sales = {},
     dayRate = {},
   } = shift;
 
-  // Group readings by fuelType
+  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
   const groupedReadings = readings.reduce((acc, curr) => {
     if (!acc[curr.fuelType]) acc[curr.fuelType] = [];
     acc[curr.fuelType].push(curr);
     return acc;
   }, {});
 
-  const thrownMap = thrownOutFuel.reduce((acc, entry) => {
+  const nozzleTestingMap = nozzleTesting.reduce((acc, entry) => {
     acc[entry.fuelType] = parseFloat(entry.quantity || 0);
     return acc;
   }, {});
 
-  // === Fuel Revenue Summary ===
   let totalFuelRevenue = 0;
   const fuelRevenueBreakdown = Object.entries(groupedReadings).map(
     ([fuelType, entries]) => {
@@ -35,8 +50,8 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
         return sum + (closing - opening);
       }, 0);
 
-      const thrown = thrownMap[fuelType] || 0;
-      const netVolume = totalVolume - thrown;
+      const nozzleTest = nozzleTestingMap[fuelType] || 0;
+      const netVolume = totalVolume - nozzleTest;
       const revenue = netVolume * rate;
 
       totalFuelRevenue += revenue;
@@ -44,14 +59,41 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
       return (
         <div
           key={fuelType}
-          className="bg-gray-100 p-4 rounded-md shadow-sm space-y-1"
+          className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm"
         >
-          <h4 className="font-semibold text-lg">{fuelType}</h4>
-          <p>Total Volume: {totalVolume.toFixed(2)} L</p>
-          <p>Thrown Out: {thrown.toFixed(2)} L</p>
-          <p>Net Volume: {netVolume.toFixed(2)} L</p>
-          <p>Rate: ₹{rate.toFixed(2)}</p>
-          <p>Revenue: ₹{revenue.toFixed(2)}</p>
+          <h4 className="font-semibold text-lg text-gray-800">{fuelType}</h4>
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            <div>
+              <div className="text-sm text-gray-600">Total Volume</div>
+              <div className="font-medium text-gray-800">
+                {totalVolume.toFixed(2)} L
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Nozzle Testing</div>
+              <div className="font-medium text-gray-800">
+                {nozzleTest.toFixed(2)} L
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Net Volume</div>
+              <div className="font-medium text-gray-800">
+                {netVolume.toFixed(2)} L
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Rate</div>
+              <div className="font-medium text-gray-800">
+                ₹{rate.toFixed(2)}/L
+              </div>
+            </div>
+            <div className="col-span-2">
+              <div className="text-sm text-gray-600">Revenue</div>
+              <div className="font-semibold text-lg text-blue-600">
+                ₹{formatINR(revenue.toFixed(2))}
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
@@ -61,11 +103,11 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
     (sum, sale) => sum + parseFloat(sale.amount || 0),
     0
   );
-  const totalDeferral = deferals.reduce(
-    (sum, d) => sum + parseFloat(d.amount || d.litres * (dayRate[d.fuelType] || 0) || 0),
+  const totalCreditSales = creditSales.reduce(
+    (sum, d) => sum + parseFloat(d.amount || 0),
     0
   );
-  const totalPayments = payments.reduce(
+  const totalCreditBack = creditBack.reduce(
     (sum, p) => sum + parseFloat(p.amount || 0),
     0
   );
@@ -75,92 +117,213 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
   const managerCash = parseFloat(sales.cashWithManager || 0);
   const lost = parseFloat(sales.lost || 0);
 
-  // === TTS (Theoretical Total Sale) and Final Calculations ===
   const TTS = totalFuelRevenue + totalLubeSales - lost;
-  const selfReported = totalDeferral + qrTransfer + card + managerCash;
+  const selfReported = totalCreditSales + qrTransfer + card + managerCash;
   const cashInHand = TTS - selfReported;
 
+  const handleFinalSubmit = async () => {
+    const updated = {
+      ...formData,
+      shift: {
+        ...formData.shift,
+        sales: {
+          ...formData.shift.sales,
+          cashInHand: cashInHand.toFixed(2),
+          creditSalesTotal: totalCreditSales.toFixed(2),
+          creditBackTotal: totalCreditBack.toFixed(2),
+        },
+      },
+    };
+
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const success = await onNext(updated);
+      if (success) {
+        setSubmitted(true);
+      } else {
+        setErrorMessage("Submission failed. Please try again.");
+      }
+    } catch (err) {
+      console.error("Submission error:", err);
+      setErrorMessage("Submission failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <Card className="p-6 space-y-6 bg-white border border-gray-200 shadow-lg">
-      <CardContent className="space-y-6">
-        <h2 className="text-2xl font-bold text-gray-800">Revenue Breakdown</h2>
+    <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
+      <CardContent className="p-8 space-y-10">
+        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+          Final Calculations
+        </h2>
 
         {/* Fuel Sales */}
-        <div className="space-y-2 border border-gray-300 bg-gray-50 p-4 rounded-md shadow-sm">
-          <h3 className="text-xl font-semibold">⛽ Fuel Sales</h3>
-          {fuelRevenueBreakdown}
-          <p className="text-right font-semibold">
-            Fuel Total: ₹{totalFuelRevenue.toFixed(2)}
-          </p>
-        </div>
+        <section className="space-y-6 bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+          <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            ⛽ Fuel Sales
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {fuelRevenueBreakdown}
+          </div>
+          <div className="text-right font-semibold text-xl text-blue-600 mt-6 pt-6 border-t">
+            Total Fuel Revenue: ₹{formatINR(totalFuelRevenue.toFixed(2))}
+          </div>
+        </section>
 
         {/* Lube Sales */}
-        <div className="space-y-2 border border-yellow-400 bg-yellow-50 p-4 rounded-md shadow-sm">
-          <h3 className="text-xl font-semibold text-yellow-800">
+        <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+          <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
             🛢️ Lube Sales
           </h3>
-          <p className="text-lg font-medium">
-            Total Lube Sales: ₹{totalLubeSales.toFixed(2)}
-          </p>
-        </div>
+          <div className="mt-6">
+            <div className="text-base font-medium text-gray-600">
+              Total Lube Sales
+            </div>
+            <div className="text-xl font-semibold text-blue-600 mt-2">
+              ₹{formatINR(totalLubeSales.toFixed(2))}
+            </div>
+          </div>
+        </section>
 
-        {/* Lost/Stolen Cash */}
-        <div className="space-y-2 border border-red-400 bg-red-50 p-4 rounded-md shadow-sm">
-          <h3 className="text-xl font-extrabold text-red-700 flex items-center gap-2">
-            🚨 Lost or Stolen Cash
+        {/* Lost/Stolen */}
+        {lost > 0 && (
+          <section className="bg-white p-8 rounded-xl border border-red-200 shadow-sm">
+            <h3 className="text-2xl font-bold text-red-600 flex items-center gap-2">
+              🚨 Lost or Stolen Cash
+            </h3>
+            <div className="mt-6">
+              <div className="text-base font-medium text-red-600">
+                Amount Lost
+              </div>
+              <div className="text-xl font-semibold text-red-600 mt-2">
+                ₹{formatINR(lost.toFixed(2))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Total Theoretical Sale */}
+        <section className="bg-white p-8 rounded-xl border border-blue-200 shadow-sm">
+          <h3 className="text-2xl font-bold text-blue-800">
+            Total Theoretical Sale (TTS)
           </h3>
-          <p className="text-lg font-bold text-red-800">₹{lost.toFixed(2)}</p>
-        </div>
+          <div className="mt-6">
+            <div className="text-base font-medium text-blue-600">
+              Total Amount
+            </div>
+            <div className="text-3xl font-bold text-blue-600 mt-2">
+              ₹{formatINR(TTS.toFixed(2))}
+            </div>
+          </div>
+        </section>
 
-        <hr />
-
-        <div className="text-lg font-bold text-right text-blue-800">
-          Total Theoretical Sale (TTS): ₹{TTS.toFixed(2)}
-        </div>
-
-        <hr />
-
-        <div className="space-y-2 border border-green-300 bg-green-50 p-4 rounded-md shadow-sm">
-          <h2 className="text-xl font-semibold text-green-900">
+        {/* Reported Receipts */}
+        <section className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+          <h3 className="text-2xl font-bold text-gray-800">
             🧾 Reported Receipts
-          </h2>
-          <p>Deferral Orders: ₹{totalDeferral.toFixed(2)}</p>
-          <p>QR Transfer: ₹{qrTransfer.toFixed(2)}</p>
-          <p>Card Payments: ₹{card.toFixed(2)}</p>
-          <p>Cash with Manager: ₹{managerCash.toFixed(2)}</p>
-        </div>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+              <div className="text-base font-medium text-gray-600">
+                Credit Sales
+              </div>
+              <div className="text-xl font-medium text-gray-800 mt-2">
+                ₹{formatINR(totalCreditSales.toFixed(2))}
+              </div>
+            </div>
+            <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+              <div className="text-base font-medium text-gray-600">
+                QR Transfer
+              </div>
+              <div className="text-xl font-medium text-gray-800 mt-2">
+                ₹{formatINR(qrTransfer.toFixed(2))}
+              </div>
+            </div>
+            <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+              <div className="text-base font-medium text-gray-600">
+                Card Payments
+              </div>
+              <div className="text-xl font-medium text-gray-800 mt-2">
+                ₹{formatINR(card.toFixed(2))}
+              </div>
+            </div>
+            <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+              <div className="text-base font-medium text-gray-600">
+                Cash with Manager
+              </div>
+              <div className="text-xl font-medium text-gray-800 mt-2">
+                ₹{formatINR(managerCash.toFixed(2))}
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <hr />
+        {/* Final Cash in Hand */}
+        <section className="bg-white p-8 rounded-xl border border-green-200 shadow-sm">
+          <h3 className="text-2xl font-bold text-green-800">
+            Calculated Cash in Hand
+          </h3>
+          <div className="mt-6">
+            <div className="text-base font-medium text-green-600">
+              Final Amount
+            </div>
+            <div className="text-3xl font-bold text-green-600 mt-2">
+              ₹{formatINR(cashInHand.toFixed(2))}
+            </div>
+            <div className="text-sm text-gray-500 mt-3">
+              (TTS − Credit Sales − QR − Card − Cash with Manager)
+            </div>
+          </div>
+        </section>
 
-        <div className="text-lg font-bold text-right text-green-700">
-          Calculated Cash in Hand: ₹{cashInHand.toFixed(2)}
-        </div>
-        <div className="text-right text-gray-500">
-          (TTS − Deferrals − QR − Card − Cash with Manager)
-        </div>
+        {/* Buttons */}
+        {!submitted && (
+          <div className="flex justify-end gap-4 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onBack}
+              disabled={loading}
+              className="h-11 px-6"
+            >
+              Back
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  disabled={loading}
+                  className="h-11 px-6 bg-black text-white hover:bg-gray-800"
+                >
+                  {loading ? "Submitting..." : "Submit"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm Submission</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to submit the final shift report?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleFinalSubmit}>
+                    Confirm
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
 
-        <div className="flex justify-between pt-4">
-          <Button onClick={onBack}>Back</Button>
-          <Button
-            onClick={() => {
-              const updated = {
-                ...formData,
-                shift: {
-                  ...formData.shift,
-                  sales: {
-                    ...formData.shift.sales,
-                    cashInHand: cashInHand.toFixed(2),
-                    deferralTotal: totalDeferral.toFixed(2),
-                  },
-                },
-              };
-              setFormData(updated);
-              onNext(updated);
-            }}
-          >
-            Submit
-          </Button>
-        </div>
+        {errorMessage && (
+          <div className="text-red-600 font-medium text-sm mt-4">
+            {errorMessage}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

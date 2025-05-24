@@ -2,7 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import Login from "@/Pages/Login/LoginPage";
 import ShiftPage from "@/Pages/ShiftPage/ShiftPage";
 import UnauthorizedPage from "@/Pages/Unauthorized/UnauthorizedPage";
-import AdminDashboard from "@/Pages/Admin/AdminDashboard";
+
 import AuthProtectedRoute from "@/Pages/Routing/AuthProtectedRoute";
 import AdminProtectedRoute from "@/Pages/Routing/AdminProtectedRoute";
 import { useAuthContext } from "@/Hooks/AuthHooks/useAuthContext";
@@ -21,7 +21,6 @@ import AdminEditShiftPage from "../../components/Forms/AdminEditShiftPage";
 import AdminAccountSummaryPage from "../Admin/AdminAccountSummaryPage";
 import AdminOrderSummaryPage from "../Admin/AdminOrderSummaryPage";
 import AdminShiftSummaryPage from "../Admin/AdminShiftSummaryPage";
-
 
 function App() {
   const { user } = useAuthContext();
@@ -54,14 +53,20 @@ function App() {
 
           <Route path="/create-orders" element={<AdminDefPayForm />} />
           <Route path="/admin-shifts" element={<AdminShiftsPage />} />
-          
-          <Route path="/edit-shift/:id" element={<AdminEditShiftPage/>}/>
-          <Route path="/account-summary/:id" element={<AdminAccountSummaryPage />} />
-          <Route path="/order-summary/:id" element={<AdminOrderSummaryPage/>}/>
-          <Route path ="/shift-summary/:id" element={<AdminShiftSummaryPage />}/>
 
-
-
+          <Route path="/edit-shift/:id" element={<AdminEditShiftPage />} />
+          <Route
+            path="/account-summary/:id"
+            element={<AdminAccountSummaryPage />}
+          />
+          <Route
+            path="/order-summary/:id"
+            element={<AdminOrderSummaryPage />}
+          />
+          <Route
+            path="/shift-summary/:id"
+            element={<AdminShiftSummaryPage />}
+          />
         </Route>
       </Routes>
     </>
