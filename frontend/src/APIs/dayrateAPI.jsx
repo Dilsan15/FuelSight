@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const dayrateAPI = axios.create({
-  baseURL: "http://localhost:5001/api/dayrates",
+  baseURL: "https://petrol-pump-accounting.onrender.com/api/dayrates",
   headers: {
     "Content-Type": "application/json",
   },
