@@ -20,11 +20,17 @@ const defPayOrderRoutes = require('./routes/DefPayOrderRoute');
 const app = express();
 const PORT = process.env.PORT || 5001; // Added fallback port
 
+// Trust proxy configuration - IMPORTANT for rate limiting behind proxies
+// Set to true if behind a single proxy, or specify the number of proxies
+app.set('trust proxy', true);
+
 // Rate limiting configuration
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again after 15 minutes'
+  message: 'Too many requests from this IP, please try again after 15 minutes',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 
 // Apply rate limiter to all API routes
@@ -38,8 +44,6 @@ const allowedOrigins = [
 ].filter(Boolean); // Remove any undefined values
 
 app.use(cors());
-
-
 
 // Middleware
 app.use(express.json()); // Add size limit
