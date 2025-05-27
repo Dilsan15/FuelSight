@@ -11,6 +11,12 @@ export const useSubmitShift = () => {
   const { user } = useAuthContext();
 
   const submitShift = async ({ shift, creditSales = [], creditBack = [] }) => {
+    // ✅ Prevent double submissions
+    if (isSubmitting) {
+      console.warn("⚠️ Submission already in progress, ignoring duplicate request");
+      return null;
+    }
+
     setIsSubmitting(true);
     setError(null);
     setResponse(null);
@@ -23,20 +29,23 @@ export const useSubmitShift = () => {
       );
 
       setResponse(res.data);
-      return res.data;               // resolves on success
+      
+      // ✅ Log out user after successful submission
+      localStorage.clear();
+      window.location.href = "/login";
+      
+      return res.data;
     } catch (err) {
       // Pass the backend message to the caller
-      const msg =
-        err.response?.data?.error ||
-        "❌ Something went wrong submitting the shift.";
-      setError(msg);
-      throw new Error(msg);
+      const errorData = err.response?.data;
+      const msg = errorData?.error || "❌ Something went wrong submitting the shift.";
+      const details = errorData?.details ? ` Details: ${errorData.details}` : "";
+      const fullErrorMsg = msg + details;
+      
+      setError(fullErrorMsg);
+      throw new Error(fullErrorMsg);
     } finally {
       setIsSubmitting(false);
-
-      /* 🔽  LOG OUT ON *EVERY* EXIT  🔽 */
-      localStorage.clear();          // remove token, user, any other keys
-      window.location.href = "/login";   // hard-redirect to login
     }
   };
 

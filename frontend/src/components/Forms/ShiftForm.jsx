@@ -14,7 +14,10 @@ import {
 import { formatINR } from "@/utils/formatting.js";
 import {
   getSafePositive,
-  enforceOneIfEmptyOrZero,
+  getSafeDecimal,
+  enforceZeroIfEmptyOrZero,
+  enforceZeroIfEmpty,
+  formatCurrencyInput,
 } from "@/utils/handleSafeInput.js";
 
 const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
@@ -24,11 +27,11 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
 
   useEffect(() => {
     if (
-      !formData.thrownOutFuel ||
-      formData.thrownOutFuel.length !== fuelTypes.length
+      !formData.nozzleTesting ||
+      formData.nozzleTesting.length !== fuelTypes.length
     ) {
       const preset = fuelTypes.map((fuelType) => ({ fuelType, quantity: "0" }));
-      setFormData({ thrownOutFuel: preset });
+      setFormData({ nozzleTesting: preset });
     }
   }, [fuelTypes]);
 
@@ -148,10 +151,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
           </div>
         </section>
 
-        {/* Thrown Out Fuel */}
+        {/* Fuel Testing/Calibration */}
         <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
           <h3 className="text-2xl font-bold text-gray-900">
-            Fuel Thrown Out (Calibration)
+            Fuel Testing/Calibration
           </h3>
           {fuelTypes.map((fuel) => (
             <div
@@ -170,34 +173,35 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
               </div>
               <div className="space-y-3">
                 <Label className="text-sm font-semibold text-gray-700">
-                  Quantity Thrown (L)
+                  Quantity Used (L)
                 </Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
+                  step="any"
                   value={
-                    formData.thrownOutFuel?.find((f) => f.fuelType === fuel)
+                    formData.nozzleTesting?.find((f) => f.fuelType === fuel)
                       ?.quantity ?? ""
                   }
                   onChange={(e) => {
-                    const updated = formData.thrownOutFuel.map((entry) =>
+                    const updated = formData.nozzleTesting.map((entry) =>
                       entry.fuelType === fuel
                         ? {
                             ...entry,
-                            quantity: getSafePositive(e.target.value),
+                            quantity: getSafeDecimal(e.target.value),
                           }
                         : entry
                     );
-                    setFormData({ thrownOutFuel: updated });
+                    setFormData({ nozzleTesting: updated });
                   }}
                   onBlur={(e) => {
-                    if (e.target.value === "" || Number(e.target.value) <= 0) {
-                      const updated = formData.thrownOutFuel.map((entry) =>
+                    if (e.target.value === "" || Number(e.target.value) < 0) {
+                      const updated = formData.nozzleTesting.map((entry) =>
                         entry.fuelType === fuel
-                          ? { ...entry, quantity: "1" }
+                          ? { ...entry, quantity: "0" }
                           : entry
                       );
-                      setFormData({ thrownOutFuel: updated });
+                      setFormData({ nozzleTesting: updated });
                     }
                   }}
                   className="bg-gray-50 border-gray-300 h-11"
@@ -251,15 +255,14 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                       <Input
                         type="number"
                         min={0}
+                        step="any"
                         value={closing}
                         onChange={(e) =>
                           handleReadingChange(
                             fuel,
                             nozzle,
                             "closing",
-                            e.target.value === ""
-                              ? ""
-                              : Math.max(0, Number(e.target.value))
+                            getSafeDecimal(e.target.value)
                           )
                         }
                         onBlur={(e) => {
@@ -314,18 +317,18 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                 </Label>
                 <Input
                   type="text"
-                  inputMode="numeric"
-                  value={formatINR(item.amount || "")}
+                  inputMode="decimal"
+                  value={formatCurrencyInput(item.amount || "")}
                   onChange={(e) => {
                     const raw = e.target.value.replace(/,/g, "");
                     const updated = [...formData.lubeSales];
-                    updated[index].amount =
-                      raw === "" ? "" : Math.max(0, Number(raw));
+                    updated[index].amount = getSafeDecimal(raw);
                     setFormData({ lubeSales: updated });
                   }}
                   onBlur={(e) => {
+                    const raw = e.target.value.replace(/,/g, "");
                     const updated = [...formData.lubeSales];
-                    if (e.target.value === "") {
+                    if (raw === "" || Number(raw) < 0) {
                       updated[index].amount = "0";
                       setFormData({ lubeSales: updated });
                     }
@@ -339,17 +342,18 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                 </Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
+                  step="any"
                   value={item.quantity || ""}
                   onChange={(e) => {
                     const updated = [...formData.lubeSales];
-                    updated[index].quantity = getSafePositive(e.target.value);
+                    updated[index].quantity = getSafeDecimal(e.target.value);
                     setFormData({ lubeSales: updated });
                   }}
                   onBlur={(e) => {
-                    if (e.target.value === "" || Number(e.target.value) <= 0) {
+                    if (e.target.value === "" || Number(e.target.value) < 0) {
                       const updated = [...formData.lubeSales];
-                      updated[index].quantity = "1";
+                      updated[index].quantity = "0";
                       setFormData({ lubeSales: updated });
                     }
                   }}
@@ -378,7 +382,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
               onClick={() => {
                 const updated = [
                   ...(formData.lubeSales || []),
-                  { description: "", amount: "", quantity: "1" },
+                  { description: "", amount: "", quantity: "0" },
                 ];
                 setFormData({ lubeSales: updated });
               }}

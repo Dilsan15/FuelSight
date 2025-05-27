@@ -136,28 +136,6 @@ const AdminPayDefActPage = () => {
     0
   );
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-8 w-[250px]" />
-        <div className="grid gap-6 md:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-[120px]" />
-          ))}
-        </div>
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-[60px]" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="p-6">
@@ -187,7 +165,11 @@ const AdminPayDefActPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {loading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
             <div className="text-2xl font-bold">{allAccounts.length}</div>
+            )}
           </CardContent>
         </Card>
 
@@ -198,22 +180,30 @@ const AdminPayDefActPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {loading ? (
+              <Skeleton className="h-8 w-24" />
+            ) : (
             <div className="text-2xl font-bold">
               ₹{totalOutstanding.toFixed(2)}
             </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Active Accounts
+              Users Owing Money
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {loading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
             <div className="text-2xl font-bold">
-              {allAccounts.filter((acc) => acc.balance > 0).length}
+              {allAccounts.filter((acc) => acc.balance < 0).length}
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -224,9 +214,13 @@ const AdminPayDefActPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {loading ? (
+              <Skeleton className="h-8 w-24" />
+            ) : (
             <div className="text-2xl font-bold">
               ₹{(totalOutstanding / Math.max(allAccounts.length, 1)).toFixed(2)}
             </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -309,28 +303,10 @@ const AdminPayDefActPage = () => {
           </div>
 
           <div className="rounded-md border">
-            {loading ? (
-              <Table>
-                <TableBody>
-                  {[...Array(5)].map((_, i) => (
-                    <TableRow key={i}>
-                      {[...Array(6)].map((_, j) => (
-                        <TableCell key={j}>
-                          <Skeleton className="h-4 w-full" />
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : error ? (
+            {error ? (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
-            ) : paginatedAccounts.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground">
-                No accounts found matching your search.
-              </div>
             ) : (
               <Table>
                 <TableHeader>
@@ -344,7 +320,24 @@ const AdminPayDefActPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedAccounts.map((acc) => (
+                  {loading ? (
+                    [...Array(5)].map((_, i) => (
+                      <TableRow key={i}>
+                        {[...Array(6)].map((_, j) => (
+                          <TableCell key={j}>
+                            <Skeleton className="h-4 w-full" />
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : paginatedAccounts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground p-8">
+                        No accounts found matching your search.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedAccounts.map((acc) => (
                     <TableRow key={acc._id} className="hover:bg-muted/50">
                       <TableCell
                         className="font-mono cursor-pointer"
@@ -404,7 +397,8 @@ const AdminPayDefActPage = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    ))
+                  )}
                 </TableBody>
               </Table>
             )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 /* ──────────  ShadCN / UI  ────────── */
@@ -54,7 +54,7 @@ import { useDefPayOrder } from "@/Hooks/DefpayorderHooks/useDefPayOrder";
 import { useDayRates } from "@/Hooks/DayrateHooks/useDayRates"; // 🆕
 
 /* ──────────  Utils  ────────── */
-import { getSafePositive } from "@/utils/handleSafeInput.js";
+import { getSafeDecimal, formatCurrencyInput } from "@/utils/handleSafeInput.js";
 
 /* ──────────  Defaults  ────────── */
 const defaultState = {
@@ -97,21 +97,27 @@ export default function AdminCreateOrderForm() {
   const [shift, setShift] = useState(null); // used only in edit-mode
 
   /* helper */
-  const handleChange = (field, val) =>
-    setForm((prev) => ({ ...prev, [field]: val }));
+  const handleChange = useCallback((field, val) =>
+    setForm((prev) => ({ ...prev, [field]: val })), []);
 
   const litresDisplay = Number(form.quantity || 0).toFixed(2);
 
   /* ────────── 1. fetch accounts once ────────── */
   useEffect(() => {
+    let isMounted = true;
     (async () => {
       try {
         const res = await fetchAccounts("", 1, 500, "all");
-        setAccounts(res.data || []);
+        if (isMounted) {
+          setAccounts(res.data || []);
+        }
       } catch (err) {
         console.error("Failed to fetch accounts", err);
       }
     })();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /* ────────── 2. fetch order when editing ────────── */
@@ -143,13 +149,13 @@ export default function AdminCreateOrderForm() {
     setPump(users.find((u) => u._id === order.user?._id) || null);
   }, [order, users, isEditMode]);
 
-  /* ────────── 4. auto-fill DAY-RATE ────────── */
+  /* ────────── 4. auto-fill DAY-RATE (only for workers) ────────── */
   useEffect(() => {
-    if (form.type !== "creditSale" || !form.fuelType) return;
+    if (form.type !== "creditSale" || !form.fuelType || selectedPump?.role === "admin") return;
 
     // choose the correct source:   edit-mode → shift.dayRate
     //                              create   → latest dayRates from hook
-    const rateSource = isEditMode ? shift?.dayRate : dayRates;
+    const rateSource = isEditMode ? shift?.dayRate : dayRates?.rates;
     if (!rateSource) return;
 
     const rate = rateSource[form.fuelType];
@@ -162,20 +168,23 @@ export default function AdminCreateOrderForm() {
     form.dayRate,
     isEditMode,
     shift,
-    dayRates, // 🆕
+    dayRates,
+    selectedPump?.role
   ]);
 
-  /* ────────── 5. compute litres whenever amount/dayRate changes ────────── */
+  /* ────────── 5. compute litres whenever amount/dayRate changes (only for workers) ────────── */
   useEffect(() => {
-    if (form.type !== "creditSale") return;
+    if (form.type !== "creditSale" || selectedPump?.role === "admin") return;
 
     const amt = Number(form.amount || 0);
     const rate = Number(form.dayRate || 0) || 1;
     const litres = amt / rate;
 
-    handleChange("quantity", litres ? litres.toFixed(2) : "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.amount, form.dayRate, form.type]);
+    const newQuantity = litres ? litres.toFixed(2) : "";
+    if (newQuantity !== form.quantity) {
+      handleChange("quantity", newQuantity);
+    }
+  }, [form.amount, form.dayRate, form.type, form.quantity, handleChange, selectedPump?.role]);
 
   /* ────────── 6. submit handler ────────── */
   const handleSubmit = async () => {
@@ -187,32 +196,82 @@ export default function AdminCreateOrderForm() {
         alert("Select a valid payment type.");
         return;
       }
+      // Validation
       if (!form.userId || !form.defPayAccount) {
         alert("Pump and account are required.");
         return;
       }
-
-      const payload = {
-        ...form,
-        amount: Number(form.amount || 0),
-        dayRate: Number(form.dayRate || 0),
-        quantity:
-          form.type === "creditSale" ? Number(form.quantity || 0) : undefined,
-        user: form.userId,
-        submittedByName: user.username,
-      };
-
-      if (form.type !== "creditBack") delete payload.paymentType;
-      if (form.type !== "creditSale") {
-        delete payload.dayRate;
-        delete payload.dueDate;
-        delete payload.fuelType;
-        delete payload.quantity;
+      
+      if (!form.amount || Number(form.amount) <= 0) {
+        alert("Amount must be greater than 0.");
+        return;
+      }
+      
+      if (form.type === "creditSale") {
+        // Fuel type only required for worker accounts
+        if (selectedPump?.role === "worker" && !form.fuelType) {
+          alert("Fuel type is required for worker credit sales.");
+          return;
+        }
+        if (!form.dueDate) {
+          alert("Due date is required for credit sales.");
+          return;
+        }
+        // Additional validation for worker accounts
+        if (selectedPump?.role === "worker") {
+          if (!form.dayRate || Number(form.dayRate) <= 0) {
+            alert("Day rate is required for worker orders.");
+            return;
+          }
+          if (!form.quantity || Number(form.quantity) <= 0) {
+            alert("Quantity must be calculated and greater than 0.");
+            return;
+          }
+        }
       }
 
+      const payload = {
+        // Backend expects these field names for updates
+        userId: form.userId,
+        accountId: form.defPayAccount,
+        type: form.type,
+        amount: Number(form.amount || 0),
+        submittedByName: user.username,
+        description: form.description || "",
+        // Always include shift date for updates to find associated shift
+        shiftDate: form.shiftDate,
+        // Credit sale fields
+        ...(form.type === "creditSale" && {
+          dueDate: form.dueDate,
+          // Only include fuel type and quantity for worker accounts
+          ...(selectedPump?.role === "worker" && {
+            fuelType: form.fuelType,
+            quantity: Number(form.quantity || 0)
+          })
+        }),
+        // Credit back fields
+        ...(form.type === "creditBack" && {
+          paymentType: form.paymentType
+        }),
+        // For create mode, also include these fields
+        ...(!isEditMode && {
+          defPayAccount: form.defPayAccount,
+          user: form.userId,
+          code: form.code,
+          actName: form.actName
+        })
+      };
+
+      console.log('Submitting payload:', payload);
+      
       setSubmitting(true);
-      isEditMode ? await updateOrder(id, payload) : await createOrder(payload);
-      navigate("/admin-orders");
+      const result = isEditMode ? await updateOrder(id, payload) : await createOrder(payload);
+      
+      if (result) {
+        navigate("/admin-orders");
+      } else {
+        alert("Failed to create order. Check console for details.");
+      }
     } catch (err) {
       console.error("❌ Error submitting order:", err);
       alert("Error submitting order");
@@ -261,6 +320,16 @@ export default function AdminCreateOrderForm() {
               onValueChange={(v) => {
                 handleChange("userId", v);
                 setPump(users.find((u) => u._id === v) || null);
+                // Reset fields when pump changes
+                if (users.find((u) => u._id === v)?.role === "admin") {
+                  handleChange("dayRate", "");
+                  handleChange("quantity", "");
+                  handleChange("shiftDate", "");
+                  handleChange("fuelType", ""); // Clear fuel type for admin
+                } else {
+                  // Reset fuel type when switching to worker (will be repopulated from their readings)
+                  handleChange("fuelType", "");
+                }
               }}
             >
               <SelectTrigger className="h-11 bg-background">
@@ -269,19 +338,25 @@ export default function AdminCreateOrderForm() {
                 />
               </SelectTrigger>
               <SelectContent>
-                {users
-                  .filter((u) => u.role === "worker")
-                  .map((u) => (
-                    <SelectItem key={u._id} value={u._id}>
-                      {u.username} – {u.stationName}
-                    </SelectItem>
-                  ))}
+                {users.map((u) => (
+                  <SelectItem key={u._id} value={u._id}>
+                    {u.username} – {u.stationName} ({u.role})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {selectedPump && (
+              <div className="text-sm text-muted-foreground mt-1">
+                {selectedPump.role === "worker" 
+                  ? "Worker account: Will calculate fuel quantity, require fuel type and shift date"
+                  : "Admin account: Manual entry without fuel type, quantity or shift date"
+                }
+              </div>
+            )}
           </div>
 
-          {/* ────────── Fuel Type (creditSale) ────────── */}
-          {form.type === "creditSale" && (
+          {/* ────────── Fuel Type (creditSale and worker only) ────────── */}
+          {form.type === "creditSale" && selectedPump?.role === "worker" && (
             <div>
               <Label>Fuel Type</Label>
               <Select
@@ -382,40 +457,78 @@ export default function AdminCreateOrderForm() {
           {/* ────────── creditSale inputs ────────── */}
           {form.type === "creditSale" && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Amount and Day Rate (Day Rate only for workers) */}
+              <div className={`grid grid-cols-1 gap-4 ${selectedPump?.role === "worker" ? "md:grid-cols-2" : ""}`}>
                 <div>
                   <Label>Amount (₹)</Label>
                   <Input
-                    type="number"
-                    value={form.amount}
-                    min={0}
-                    onChange={(e) =>
-                      handleChange("amount", getSafePositive(e.target.value))
-                    }
+                    type="text"
+                    inputMode="decimal"
+                    value={formatCurrencyInput(form.amount || "")}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/,/g, "");
+                      // Only validate format, don't convert to number yet
+                      if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+                        handleChange("amount", raw);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const raw = e.target.value.replace(/,/g, "");
+                      if (raw === "" || Number(raw) < 0) {
+                        handleChange("amount", "0");
+                      } else if (raw !== "") {
+                        // Convert to number and back to string to normalize
+                        const num = Number(raw);
+                        if (!isNaN(num) && isFinite(num)) {
+                          handleChange("amount", num.toString());
+                        }
+                      }
+                    }}
                     className="h-11"
                   />
                 </div>
-                <div>
-                  <Label>Day Rate (₹/L)</Label>
-                  <Input
-                    type="number"
-                    value={form.dayRate}
-                    min={0}
-                    onChange={(e) =>
-                      handleChange("dayRate", getSafePositive(e.target.value))
-                    }
-                    className="h-11"
-                  />
-                </div>
+                {selectedPump?.role === "worker" && (
+                  <div>
+                    <Label>Day Rate (₹/L)</Label>
+                    <Input
+                      type="text" 
+                      inputMode="decimal"
+                      defaultValue={form.dayRate || ""}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^\d.]/g, "");
+                        // Only validate format, don't convert to number yet
+                        if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+                          handleChange("dayRate", raw);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const raw = e.target.value.replace(/[^\d.]/g, "");
+                        if (raw === "" || Number(raw) < 0) {
+                          handleChange("dayRate", "0");
+                        } else if (raw !== "") {
+                          // Convert to number and back to string to normalize
+                          const num = Number(raw);
+                          if (!isNaN(num) && isFinite(num)) {
+                            handleChange("dayRate", num.toString());
+                          }
+                        }
+                      }}
+                      className="h-11"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Litres (calculated)</Label>
-                  <div className="h-11 flex items-center px-4 rounded-md bg-muted/50">
-                    {litresDisplay} L
+              {/* Litres and Due Date (Litres only for workers) */}
+              <div className={`grid grid-cols-1 gap-4 ${selectedPump?.role === "worker" ? "md:grid-cols-2" : ""}`}>
+                {selectedPump?.role === "worker" && (
+                  <div>
+                    <Label>Litres (calculated)</Label>
+                    <div className="h-11 flex items-center px-4 rounded-md bg-muted/50">
+                      {litresDisplay} L
+                    </div>
                   </div>
-                </div>
+                )}
                 <div>
                   <Label>Due Date</Label>
                   <Input
@@ -435,12 +548,28 @@ export default function AdminCreateOrderForm() {
               <div>
                 <Label>Amount (₹)</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  value={form.amount}
-                  onChange={(e) =>
-                    handleChange("amount", getSafePositive(e.target.value))
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={formatCurrencyInput(form.amount || "")}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/,/g, "");
+                    // Only validate format, don't convert to number yet
+                    if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+                      handleChange("amount", raw);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const raw = e.target.value.replace(/,/g, "");
+                    if (raw === "" || Number(raw) < 0) {
+                      handleChange("amount", "0");
+                    } else if (raw !== "") {
+                      // Convert to number and back to string to normalize
+                      const num = Number(raw);
+                      if (!isNaN(num) && isFinite(num)) {
+                        handleChange("amount", num.toString());
+                      }
+                    }
+                  }}
                   className="h-11"
                 />
               </div>
@@ -467,15 +596,17 @@ export default function AdminCreateOrderForm() {
           )}
 
           {/* ────────── common fields ────────── */}
-          <div>
-            <Label>Shift Date</Label>
-            <Input
-              type="date"
-              value={form.shiftDate}
-              onChange={(e) => handleChange("shiftDate", e.target.value)}
-              className="h-11"
-            />
-          </div>
+          {selectedPump?.role === "worker" && (
+            <div>
+              <Label>Shift Date</Label>
+              <Input
+                type="date"
+                value={form.shiftDate}
+                onChange={(e) => handleChange("shiftDate", e.target.value)}
+                className="h-11"
+              />
+            </div>
+          )}
 
           <div>
             <Label>Description (optional)</Label>

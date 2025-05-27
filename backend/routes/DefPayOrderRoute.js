@@ -13,12 +13,11 @@ const requireAuth = require('../middleware/RequireAuth');
 const requireAdmin = require('../middleware/RequireAdmin');
 
 // 🔒 Worker OR Admin can submit a new order
-router.use(requireAuth)
+router.use(requireAuth);
 router.post('/', createDefPayOrder);
 
 // 🔒 Admin-only routes for reading/updating/deleting orders
-router.use(requireAuth);       // ensures user is logged in
-router.use(requireAdmin);      // ensures user is admin
+router.use(requireAdmin);      // ensures user is admin (already authenticated)
 
 router.get('/search', getDefPayOrders);
 router.get('/:id', getDefPayOrder);

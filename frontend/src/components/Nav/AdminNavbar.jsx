@@ -61,7 +61,7 @@ const AdminNavbar = () => {
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center space-x-1">
+            <nav className="hidden lg:flex items-center space-x-1">
               {navItems.map(({ label, path }) => (
                 <Link
                   key={path}

@@ -19,7 +19,7 @@ const initialState = {
       lost: "0",
     },
     readings: [],
-    thrownOutFuel: [],
+    nozzleTesting: [],
     lubeSales: [],
   },
   creditSales: [],

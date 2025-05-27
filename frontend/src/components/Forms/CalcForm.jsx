@@ -41,6 +41,7 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
   }, {});
 
   let totalFuelRevenue = 0;
+  let totalCalibrationRevenue = 0;
   const fuelRevenueBreakdown = Object.entries(groupedReadings).map(
     ([fuelType, entries]) => {
       const rate = parseFloat(dayRate[fuelType] || 0);
@@ -53,8 +54,10 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
       const nozzleTest = nozzleTestingMap[fuelType] || 0;
       const netVolume = totalVolume - nozzleTest;
       const revenue = netVolume * rate;
+      const calibrationRevenue = nozzleTest * rate;
 
       totalFuelRevenue += revenue;
+      totalCalibrationRevenue += calibrationRevenue;
 
       return (
         <div
@@ -117,11 +120,21 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
   const managerCash = parseFloat(sales.cashWithManager || 0);
   const lost = parseFloat(sales.lost || 0);
 
-  const TTS = totalFuelRevenue + totalLubeSales - lost;
-  const selfReported = totalCreditSales + qrTransfer + card + managerCash;
+  // TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
+  // Note: totalFuelRevenue already accounts for calibration cost reduction
+  const TTS = totalFuelRevenue + totalLubeSales;
+  
+  // Cash in Hand = TTS - (QR + Card + Manager Cash + Credit Sales + Lost)
+  const selfReported = qrTransfer + card + managerCash + totalCreditSales + lost;
   const cashInHand = TTS - selfReported;
 
   const handleFinalSubmit = async () => {
+    // ✅ Prevent double submissions
+    if (loading) {
+      console.warn("⚠️ Submission already in progress");
+      return;
+    }
+
     const updated = {
       ...formData,
       shift: {
@@ -147,7 +160,9 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
       }
     } catch (err) {
       console.error("Submission error:", err);
-      setErrorMessage("Submission failed. Please try again.");
+      // Use the actual error message from the backend if available
+      const errorMessage = err.message || "Submission failed. Please try again.";
+      setErrorMessage(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -165,7 +180,7 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
           <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
             ⛽ Fuel Sales
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
             {fuelRevenueBreakdown}
           </div>
           <div className="text-right font-semibold text-xl text-blue-600 mt-6 pt-6 border-t">
@@ -205,6 +220,26 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
           </section>
         )}
 
+        {/* Calibration Revenue Loss */}
+        {totalCalibrationRevenue > 0 && (
+          <section className="bg-white p-8 rounded-xl border border-orange-200 shadow-sm">
+            <h3 className="text-2xl font-bold text-orange-600 flex items-center gap-2">
+              🔧 Calibration Revenue Loss
+            </h3>
+            <div className="mt-6">
+              <div className="text-base font-medium text-orange-600">
+                Revenue Lost from Testing/Calibration
+              </div>
+              <div className="text-xl font-semibold text-orange-600 mt-2">
+                ₹{formatINR(totalCalibrationRevenue.toFixed(2))}
+              </div>
+              <div className="text-sm text-gray-500 mt-2">
+                Fuel used for nozzle testing and calibration
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Total Theoretical Sale */}
         <section className="bg-white p-8 rounded-xl border border-blue-200 shadow-sm">
           <h3 className="text-2xl font-bold text-blue-800">
@@ -212,10 +247,13 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
           </h3>
           <div className="mt-6">
             <div className="text-base font-medium text-blue-600">
-              Total Amount
+              Fuel Revenue + Lube Sales (Cash Potential)
             </div>
             <div className="text-3xl font-bold text-blue-600 mt-2">
               ₹{formatINR(TTS.toFixed(2))}
+            </div>
+            <div className="text-sm text-gray-500 mt-2">
+              (₹{formatINR(totalFuelRevenue.toFixed(2))} + ₹{formatINR(totalLubeSales.toFixed(2))})
             </div>
           </div>
         </section>
@@ -225,7 +263,7 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
           <h3 className="text-2xl font-bold text-gray-800">
             🧾 Reported Receipts
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
             <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
               <div className="text-base font-medium text-gray-600">
                 Credit Sales
@@ -258,6 +296,24 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
                 ₹{formatINR(managerCash.toFixed(2))}
               </div>
             </div>
+            {lost > 0 && (
+              <div className="p-6 bg-red-50 rounded-xl border border-red-200 hover:border-red-300 transition-colors">
+                <div className="text-base font-medium text-red-600">
+                  Lost/Stolen
+                </div>
+                <div className="text-xl font-medium text-red-800 mt-2">
+                  ₹{formatINR(lost.toFixed(2))}
+                </div>
+              </div>
+            )}
+            <div className="p-6 bg-purple-50 rounded-xl border border-purple-200 hover:border-purple-300 transition-colors">
+              <div className="text-base font-medium text-purple-600">
+                Credit Back
+              </div>
+              <div className="text-xl font-medium text-purple-800 mt-2">
+                ₹{formatINR(totalCreditBack.toFixed(2))}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -274,7 +330,7 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
               ₹{formatINR(cashInHand.toFixed(2))}
             </div>
             <div className="text-sm text-gray-500 mt-3">
-              (TTS − Credit Sales − QR − Card − Cash with Manager)
+              (TTS − QR − Card − Cash with Manager − Credit Sales − Lost)
             </div>
           </div>
         </section>

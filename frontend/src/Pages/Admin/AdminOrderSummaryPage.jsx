@@ -131,7 +131,7 @@ const AdminOrderSummaryPage = () => {
                   Amount
                 </div>
                 <div className="text-lg font-bold">
-                  ₹{order.amount.toFixed(2)}
+                  ₹{order.amount ? order.amount.toFixed(2) : '0.00'}
                 </div>
               </div>
               {order.description && (
@@ -181,14 +181,27 @@ const AdminOrderSummaryPage = () => {
                   <div className="text-sm font-medium text-muted-foreground">
                     Day Rate
                   </div>
-                  <div>₹{order.dayRate?.toFixed(2)}/L</div>
+                  <div>
+                    {order.quantity && order.quantity > 0 && order.amount
+                      ? `₹${(order.amount / order.quantity).toFixed(2)}/L`
+                      : 'N/A'
+                    }
+                  </div>
                 </div>
+                {order.quantity && order.quantity > 0 && (
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground">
+                      Quantity
+                    </div>
+                    <div>{order.quantity.toFixed(2)} L</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-sm font-medium text-muted-foreground">
                     Amount
                   </div>
                   <div className="text-lg font-bold">
-                    ₹{order.amount?.toFixed(2)}
+                    ₹{order.amount ? order.amount.toFixed(2) : '0.00'}
                   </div>
                 </div>
                 <div>

@@ -65,8 +65,8 @@ const AdminShiftSummaryPage = () => {
     shiftDateSubmitted,
     sales = {},
     readings = [],
-    thrownOutFuel = [],
     lubeSales = [],
+    nozzleTesting = [],
     creditSales = [],
     creditBack = [],
     dayRate = {},
@@ -81,7 +81,7 @@ const AdminShiftSummaryPage = () => {
 
   // Lube revenue (₹)
   const totalLube = lubeSales.reduce(
-    (sum, l) => sum + Number(l.amount) * Number(l.quantity),
+    (sum, l) => sum + Number(l.amount || 0),
     0
   );
 
@@ -95,7 +95,7 @@ const AdminShiftSummaryPage = () => {
     0
   );
 
-  // Per-nozzle revenue:  Σ(volume × dayRate)
+  // Per-nozzle revenue:  Σ(volume × dayRate) - calibration cost
   const totalFuelRevenue = Object.entries(
     readings.reduce((acc, r) => {
       acc[r.fuelType] = (acc[r.fuelType] || 0) + (r.closing - r.opening);
@@ -107,8 +107,25 @@ const AdminShiftSummaryPage = () => {
     0
   );
 
-  // TTS  ( Fuel Revenue + Credit Sales )
-  const TTS = totalFuelRevenue + totalCreditSales;
+  // Calculate calibration fuel cost to subtract from fuel revenue
+  const totalCalibrationCost = nozzleTesting.reduce(
+    (sum, testing) => {
+      const rate = Number(dayRate[testing.fuelType] || 0);
+      const quantity = Number(testing.quantity || 0);
+      return sum + (quantity * rate);
+    },
+    0
+  );
+
+  // Adjusted fuel revenue (subtract calibration cost)
+  const adjustedFuelRevenue = totalFuelRevenue - totalCalibrationCost;
+
+  // TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
+  const totalLubeSales = lubeSales.reduce(
+    (sum, sale) => sum + parseFloat(sale.amount || 0),
+    0
+  );
+  const TTS = adjustedFuelRevenue + totalLubeSales;
 
   // Self-reported (for reconciliation)
   const qrTransfer = Number(sales.qrTransfer || 0);
@@ -116,7 +133,7 @@ const AdminShiftSummaryPage = () => {
   const managerCash = Number(sales.cashWithManager || 0);
   const lost = Number(sales.lost || 0);
   const cashInHand = Number(sales.cashInHand || 0);
-  const selfReported = totalCreditSales + qrTransfer + card + managerCash;
+  const selfReported = qrTransfer + card + managerCash;
 
   /* ---------- group readings by fuel type ---------- */
   const groupedReadings = readings.reduce((acc, curr) => {
@@ -189,8 +206,8 @@ const AdminShiftSummaryPage = () => {
               {totalFuelSoldL.toFixed(2)} L
             </p>
             <p className="text-gray-700">
-              <span className="font-medium">Total Revenue:</span>{" "}
-              {formatINR(totalFuelRevenue + totalCreditSales + totalCreditBack + totalLube)}
+              <span className="font-medium">TTS:</span>{" "}
+              {formatINR(TTS)}
             </p>
           </div>
 
@@ -205,67 +222,216 @@ const AdminShiftSummaryPage = () => {
         </CardContent>
       </Card>
 
-      {/* TTS Summary */}
-      <Card className="bg-gradient-to-br from-background to-muted border border-border shadow-lg rounded-xl">
+      {/* Net Fuel Summary */}
+      <Card className="bg-white border-gray-200 shadow-md rounded-xl">
         <CardContent className="p-6">
-          <h3 className="text-xl font-semibold mb-4 text-gray-900">
-            Total Transaction Summary (TTS)
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* left column */}
-            <div className="space-y-3">
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Fuel Revenue</span>
-                <span className="font-medium">
-                  {formatINR(totalFuelRevenue)}
-                </span>
+          <h3 className="text-xl font-semibold mb-4 text-gray-900">Net Fuel Summary</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Object.entries(groupedReadings).map(([fuelType, readings]) => {
+              // Calculate total volume for this fuel type
+              const totalVolume = readings.reduce((sum, r) => sum + (r.closing - r.opening), 0);
+              
+              // Get calibration amount for this fuel type
+              const calibrationAmount = nozzleTesting
+                .filter(t => t.fuelType === fuelType)
+                .reduce((sum, t) => sum + Number(t.quantity || 0), 0);
+              
+              // Net volume after calibration
+              const netVolume = totalVolume - calibrationAmount;
+              
+              // Rate and revenue
+              const rate = Number(dayRate[fuelType] || 0);
+              const netRevenue = netVolume * rate;
+              
+              return (
+                <div key={fuelType} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h4 className="font-semibold text-lg text-gray-800 mb-3">{fuelType}</h4>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Gross Volume</span>
+                      <span className="font-medium text-gray-900">{totalVolume.toFixed(2)} L</span>
+                    </div>
+                    
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Calibration</span>
+                      <span className="font-medium text-red-500">-{calibrationAmount.toFixed(2)} L</span>
+                    </div>
+                    
+                    <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
+                      <span className="text-gray-800">Net Volume</span>
+                      <span className="text-gray-900">{netVolume.toFixed(2)} L</span>
+                    </div>
+                    
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Rate</span>
+                      <span className="font-medium text-gray-900">₹{rate.toFixed(2)}/L</span>
+                    </div>
+                    
+                    <div className="flex justify-between bg-white p-2 rounded mt-2">
+                      <span className="text-sm font-medium text-gray-800">Net Revenue</span>
+                      <span className="font-bold text-blue-600">{formatINR(netRevenue)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Net Totals */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-sm text-gray-600">Total Gross Volume</div>
+                <div className="text-xl font-bold text-gray-800">{totalFuelSoldL.toFixed(2)} L</div>
               </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Credit Sales (Deferals)</span>
-                <span className="font-medium">
-                  {formatINR(totalCreditSales)}
-                </span>
+              <div className="text-center">
+                <div className="text-sm text-gray-600">Total Calibration</div>
+                <div className="text-xl font-bold text-red-600">
+                  -{nozzleTesting.reduce((sum, t) => sum + Number(t.quantity || 0), 0).toFixed(2)} L
+                </div>
               </div>
-              <div className="flex justify-between items-center py-2 font-semibold">
-                <span>Total TTS</span>
-                <span>{formatINR(TTS)}</span>
-              </div>
-            </div>
-
-            {/* right column – self-reported */}
-            <div className="space-y-3">
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Cash with Manager</span>
-                <span className="font-medium">{formatINR(managerCash)}</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">QR Transfer</span>
-                <span className="font-medium">{formatINR(qrTransfer)}</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Card</span>
-                <span className="font-medium">{formatINR(card)}</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Credit Sales</span>
-                <span className="font-medium">
-                  {formatINR(totalCreditSales)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2 font-semibold">
-                <span>Cash in Hand</span>
-                <span>{formatINR(cashInHand)}</span>
+              <div className="text-center">
+                <div className="text-sm text-gray-600">Total Net Volume</div>
+                <div className="text-xl font-bold text-green-600">
+                  {(totalFuelSoldL - nozzleTesting.reduce((sum, t) => sum + Number(t.quantity || 0), 0)).toFixed(2)} L
+                </div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Sales & Payments */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border border-gray-200 shadow-md rounded-xl">
+      {/* TTS & Cash Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        {/* TTS Calculation */}
+        <Card className="bg-white border-gray-200 shadow-lg rounded-xl hover:shadow-xl transition-shadow">
           <CardContent className="p-6">
-            <h3 className="text-xl font-semibold mb-4 text-gray-900">
+            <div className="flex items-center mb-4">
+              <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
+              <h3 className="text-xl font-semibold text-gray-900">
+                Total Theoretical Sale (TTS)
+              </h3>
+            </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Fuel Revenue</span>
+                <span className="font-semibold text-gray-900 text-lg">
+                  {formatINR(adjustedFuelRevenue)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Lube Sales</span>
+                <span className="font-semibold text-gray-900 text-lg">
+                  {formatINR(totalLubeSales)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-3 bg-gray-50 rounded-lg px-4">
+                <span className="text-gray-900 font-semibold text-lg">Total TTS</span>
+                <span className="font-bold text-gray-900 text-xl">{formatINR(TTS)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cash in Hand Calculation */}
+        <Card className="bg-white border-gray-200 shadow-lg rounded-xl hover:shadow-xl transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-center mb-4">
+              <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+              <h3 className="text-xl font-semibold text-gray-900">
+                Cash in Hand Calculation
+              </h3>
+            </div>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">TTS (Fuel + Lube)</span>
+                <span className="font-medium text-green-600">
+                  +{formatINR(TTS)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">QR Transfer</span>
+                <span className="font-medium text-red-500">
+                  -{formatINR(qrTransfer)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Card Payments</span>
+                <span className="font-medium text-red-500">
+                  -{formatINR(card)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Cash with Manager</span>
+                <span className="font-medium text-red-500">
+                  -{formatINR(managerCash)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Credit Sales</span>
+                <span className="font-medium text-red-500">
+                  -{formatINR(totalCreditSales)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Lost/Stolen</span>
+                <span className="font-medium text-red-500">
+                  -{formatINR(lost)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-3 bg-gray-50 rounded-lg px-4 mt-4">
+                <span className="text-gray-900 font-semibold text-lg">Cash in Hand</span>
+                <span className="font-bold text-gray-900 text-xl">{formatINR(TTS - qrTransfer - card - managerCash - totalCreditSales - lost)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+                {/* Credit Transactions Summary */}
+        <Card className="bg-white border-gray-200 shadow-lg rounded-xl hover:shadow-xl transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-center mb-4">
+              <div className="w-3 h-3 bg-purple-500 rounded-full mr-3"></div>
+              <h3 className="text-xl font-semibold text-gray-900">
+                Credit Transactions Summary
+              </h3>
+            </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Credit Sales (IOUs)</span>
+                <span className="font-semibold text-gray-900 text-lg">
+                  {formatINR(totalCreditSales)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Credit Back (Advance Payments)</span>
+                <span className="font-semibold text-gray-900 text-lg">
+                  {formatINR(totalCreditBack)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {totalCreditSales > 0 && (
+                  <div className="text-xs text-gray-400 bg-gray-50 px-3 py-2 rounded">
+                    Credit Sales: {creditSales.length} transaction{creditSales.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+                {totalCreditBack > 0 && (
+                  <div className="text-xs text-gray-400 bg-gray-50 px-3 py-2 rounded">
+                    Credit Back: {creditBack.length} transaction{creditBack.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
+          </div>
+        </CardContent>
+      </Card>
+      </div>
+
+      {/* Sales & Payments */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <Card className="border border-gray-200 shadow-md rounded-xl">
+          <CardContent className="p-4 md:p-6">
+            <h3 className="text-lg md:text-xl font-semibold mb-4 text-gray-900">
               Sales Breakdown
             </h3>
             <div className="space-y-3">
@@ -292,8 +458,8 @@ const AdminShiftSummaryPage = () => {
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 font-semibold">
-                <span>Total Cash in Hand</span>
-                <span>{formatINR(sales.cashInHand)}</span>
+                <span>Cash in Hand</span>
+                <span>{formatINR(TTS - qrTransfer - card - managerCash - totalCreditSales - lost)}</span>
               </div>
             </div>
           </CardContent>
@@ -368,28 +534,25 @@ const AdminShiftSummaryPage = () => {
           </Card>
         )}
 
-        {/* Thrown Out Fuel */}
-        {thrownOutFuel.length > 0 && (
+        {/* Nozzle Testing */}
+        {nozzleTesting.length > 0 && (
           <Card className="border border-gray-200 shadow-md rounded-xl">
             <CardContent className="p-6">
               <h3 className="text-xl font-semibold mb-4 text-gray-900">
-                Thrown Out Fuel
+                Fuel Testing/Calibration
               </h3>
               <div className="space-y-4">
-                {thrownOutFuel.map((f, i) => (
-                  <div key={i} className="bg-gray-50 p-4 rounded-lg">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <span className="text-gray-600">Fuel Type:</span>{" "}
-                        <span className="font-medium">{f.fuelType}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Quantity:</span>{" "}
-                        <span className="font-medium">{f.quantity} L</span>
-                      </div>
+                <div className="grid gap-4">
+                  {nozzleTesting.map((f, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                    >
+                      <span className="font-medium">{f.fuelType}</span>
+                      <span>{f.quantity} L</span>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>

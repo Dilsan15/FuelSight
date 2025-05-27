@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const DefPayAccount = require('../models/DefPayAccountModel');
 const DefPayOrder = require('../models/DefPayOrderModel');
+const UsedCode = require('../models/UsedCodeModel');
 
 // Helper validation functions
 const isValidName = (name) => /^[A-Za-z]{2,}$/.test(name?.trim() || '');
@@ -11,9 +12,6 @@ const isValidPhone = (phone) =>
 const createDefPayAccount = async (req, res) => {
   const { firstName, lastName, phoneNumber, address, note } = req.body;
 
-  if (!isValidName(firstName)) {
-    return res.status(400).json({ error: 'First name must be at least 2 letters and contain only letters.' });
-  }
 
   if (!address?.trim()) return res.status(400).json({ error: 'Address is required.' });
   if (!phoneNumber?.trim()) return res.status(400).json({ error: 'Phone number is required.' });
@@ -23,8 +21,7 @@ const createDefPayAccount = async (req, res) => {
 
   try {
     const normalizedPhone = '+91' + phoneNumber.trim().slice(-10);
-    const phoneExists = await DefPayAccount.findOne({ phoneNumber: normalizedPhone });
-    if (phoneExists) return res.status(400).json({ error: 'Phone number already in use.' });
+
 
     const firstLetter = firstName.trim()[0].toUpperCase();
     let code = req.body.code?.trim();
@@ -37,18 +34,24 @@ const createDefPayAccount = async (req, res) => {
         });
       }
 
-      const codeExists = await DefPayAccount.findOne({ code });
-      if (codeExists) {
-        return res.status(400).json({ error: 'Code already in use.' });
+      // Check if code has ever been used (including deleted accounts)
+      const usedCode = await UsedCode.findOne({ code });
+      if (usedCode) {
+        return res.status(400).json({
+          error: usedCode.deletedAt
+            ? 'Code was previously used by a deleted account and cannot be reused'
+            : 'Code already exists in an active account'
+        });
       }
     } else {
       // Generate default code: A-001, A-002, etc.
-      const existingAccounts = await DefPayAccount.find({
+      // Check both existing accounts and used codes to find next available number
+      const existingCodes = await UsedCode.find({
         code: { $regex: `^${firstLetter}-\\d{3}$`, $options: 'i' }
       }).select('code');
 
-      const usedNumbers = existingAccounts
-        .map(acc => parseInt(acc.code.split('-')[1], 10))
+      const usedNumbers = existingCodes
+        .map(usedCode => parseInt(usedCode.code.split('-')[1], 10))
         .filter(n => !isNaN(n))
         .sort((a, b) => a - b);
 
@@ -73,6 +76,13 @@ const createDefPayAccount = async (req, res) => {
       note: note?.trim() || ''
     });
 
+    // Track this code as used
+    await UsedCode.create({
+      code,
+      originalAccountId: account._id,
+      deletedAt: null
+    });
+
     res.status(201).json(account);
   } catch (err) {
     console.error('Create error:', err);
@@ -89,21 +99,11 @@ const updateDefPayAccount = async (req, res) => {
     const account = await DefPayAccount.findById(id);
     if (!account) return res.status(404).json({ error: 'Account not found.' });
 
-    if (updates.firstName && !isValidName(updates.firstName)) {
-      return res.status(400).json({ error: 'Invalid first name.' });
-    }
-    if (updates.lastName && !isValidName(updates.lastName)) {
-      return res.status(400).json({ error: 'Invalid last name.' });
-    }
+
     if (updates.phoneNumber) {
-      if (!isValidPhone(updates.phoneNumber)) {
-        return res.status(400).json({ error: 'Invalid phone number.' });
-      }
+
       const normalizedPhone = '+91' + updates.phoneNumber.trim().slice(-10);
-      const existing = await DefPayAccount.findOne({ phoneNumber: normalizedPhone });
-      if (existing && existing._id.toString() !== id) {
-        return res.status(400).json({ error: 'Phone number already in use.' });
-      }
+
       account.phoneNumber = normalizedPhone;
     }
 
@@ -113,11 +113,39 @@ const updateDefPayAccount = async (req, res) => {
     if (updates.note) account.note = updates.note.trim();
 
     if (updates.code) {
-      const existingCode = await DefPayAccount.findOne({ code: updates.code.trim() });
-      if (existingCode && existingCode._id.toString() !== id) {
-        return res.status(400).json({ error: 'Code already in use.' });
+      const newCode = updates.code.trim();
+
+      // Check if the new code has ever been used (including deleted accounts)
+      const usedCode = await UsedCode.findOne({ code: newCode });
+      if (usedCode && usedCode.originalAccountId && usedCode.originalAccountId.toString() !== id) {
+        return res.status(400).json({
+          error: usedCode.deletedAt
+            ? 'Code was previously used by a deleted account and cannot be reused'
+            : 'Code already exists in another account'
+        });
       }
-      account.code = updates.code.trim();
+
+      // Update the used code tracking if code is being changed
+      if (account.code !== newCode) {
+        // Mark old code as deleted (if it exists in UsedCode)
+        await UsedCode.findOneAndUpdate(
+          { code: account.code },
+          { deletedAt: new Date() }
+        );
+
+        // Add new code to used codes
+        await UsedCode.findOneAndUpdate(
+          { code: newCode },
+          {
+            code: newCode,
+            originalAccountId: new mongoose.Types.ObjectId(id),
+            deletedAt: null
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      account.code = newCode;
     }
 
     if (Array.isArray(updates.paymentHistory)) {
@@ -146,6 +174,25 @@ const updateDefPayAccount = async (req, res) => {
     }
 
     await account.save();
+
+    // Update associated orders with new account information
+    const updateFields = {};
+    if (updates.firstName || updates.lastName) {
+      updateFields.actName = `${account.firstName} ${account.lastName}`;
+    }
+    if (updates.code) {
+      updateFields.code = account.code;
+    }
+
+    // Only update orders if there are fields to update
+    if (Object.keys(updateFields).length > 0) {
+      const updateResult = await DefPayOrder.updateMany(
+        { defPayAccount: id },
+        { $set: updateFields }
+      );
+      console.log(`✅ Updated ${updateResult.modifiedCount} orders with new account information`);
+    }
+
     res.status(200).json(account);
   } catch (err) {
     console.error('Update error:', err);
@@ -159,6 +206,14 @@ const deleteDefPayAccount = async (req, res) => {
   try {
     const account = await DefPayAccount.findByIdAndDelete(id);
     if (!account) return res.status(404).json({ error: 'Account not found.' });
+
+    // Mark the code as used by a deleted account to prevent reuse
+    await UsedCode.findOneAndUpdate(
+      { code: account.code },
+      { deletedAt: new Date() },
+      { upsert: true, new: true }
+    );
+
     res.status(200).json({ message: 'Account deleted.' });
   } catch (err) {
     console.error('Delete error:', err);

@@ -29,7 +29,9 @@ import { useAuthContext } from "@/Hooks/AuthHooks/useAuthContext";
 import { formatINR } from "@/utils/formatting";
 import {
   getSafePositive,
-  enforceOneIfEmptyOrZero,
+  getSafeDecimal,
+  enforceZeroIfEmpty,
+  formatCurrencyInput,
 } from "@/utils/handleSafeInput";
 
 const useDebounce = (value, delay) => {
@@ -58,7 +60,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
-      if (!user) return;
+      if (!user?.token) return;
       setLoading(true);
       setError(null);
       try {
@@ -81,7 +83,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
     return () => {
       isMounted = false;
     };
-  }, [debouncedSearch, user]);
+  }, [debouncedSearch, user?.token]);
 
   const addCreditSale = () => {
     setFormData({
@@ -254,20 +256,22 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                       <Label>Amount (₹) *</Label>
                       <Input
                         type="text"
-                        inputMode="numeric"
-                        value={formatINR(d.amount || "")}
+                        inputMode="decimal"
+                        step="0.01"
+                        value={formatCurrencyInput(d.amount || "")}
                         onChange={(e) => {
                           const raw = e.target.value.replace(/,/g, "");
                           handleCreditSaleChange(
                             i,
                             "amount",
-                            getSafePositive(raw)
+                            getSafeDecimal(raw)
                           );
                         }}
                         onBlur={(e) => {
+                          const raw = e.target.value.replace(/,/g, "");
                           if (
-                            e.target.value === "" ||
-                            Number(e.target.value) <= 0
+                            raw === "" ||
+                            Number(raw) < 0
                           ) {
                             handleCreditSaleChange(i, "amount", "0");
                           }
@@ -439,20 +443,22 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                       <Label>Amount Paid (₹) *</Label>
                       <Input
                         type="text"
-                        inputMode="numeric"
-                        value={formatINR(p.amount || "")}
+                        inputMode="decimal"
+                        step="0.01"
+                        value={formatCurrencyInput(p.amount || "")}
                         onChange={(e) => {
                           const raw = e.target.value.replace(/,/g, "");
                           handleCreditBackChange(
                             i,
                             "amount",
-                            getSafePositive(raw)
+                            getSafeDecimal(raw)
                           );
                         }}
                         onBlur={(e) => {
+                          const raw = e.target.value.replace(/,/g, "");
                           if (
-                            e.target.value === "" ||
-                            Number(e.target.value) <= 0
+                            raw === "" ||
+                            Number(raw) < 0
                           ) {
                             handleCreditBackChange(i, "amount", "0");
                           }

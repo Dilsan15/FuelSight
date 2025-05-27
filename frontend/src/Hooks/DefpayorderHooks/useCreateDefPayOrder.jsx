@@ -18,7 +18,10 @@ export const useCreateDefPayOrder = () => {
       });
       return res.data;
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create order.');
+      console.error('Full create order error:', err);
+      console.error('Error response:', err.response?.data);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to create order.';
+      setError(errorMessage);
       return null;
     } finally {
       setIsCreating(false);

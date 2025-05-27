@@ -4,6 +4,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useGetShift } from "@/Hooks/ShiftHooks/useShift";
 import { useUpdateShift } from "@/Hooks/ShiftHooks/useUpdateShift";
-import { getSafePositive } from "@/utils/handleSafeInput";
+import { getSafePositive, getSafeDecimal } from "@/utils/handleSafeInput";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatINR } from "@/utils/formatting";
 import { ArrowLeft, Save } from "lucide-react";
@@ -36,7 +37,16 @@ const AdminEditShiftPage = () => {
   const navigate = useNavigate();
   const { shift, loading, error: fetchError, fetchShift } = useGetShift();
   const { updateShift, isUpdating, error: updateError } = useUpdateShift();
-  const [form, setForm] = useState(null);
+  const [form, setForm] = useState({
+    submittedByName: "",
+    timeType: "",
+    date: "",
+    sales: {},
+    readings: [],
+    nozzleTesting: [],
+    lubeSales: [],
+    dayRate: {},
+  });
 
   /* ------------ fetch / sync ------------ */
   useEffect(() => {
@@ -66,7 +76,7 @@ const AdminEditShiftPage = () => {
         dayRate: form.dayRate,
         readings: form.readings,
         lubeSales: form.lubeSales,
-        thrownOutFuel: form.thrownOutFuel,
+        nozzleTesting: form.nozzleTesting,
       });
       navigate(`/shift-summary/${id}`);
     } catch (err) {
@@ -99,18 +109,33 @@ const AdminEditShiftPage = () => {
   }
 
   /* ------------ quick totals for summary card ------------ */
-  const totalFuelSold = form.readings.reduce(
+  const isDataLoaded = shift && Object.keys(form.sales || {}).length > 0;
+  
+  const totalFuelSold = isDataLoaded ? form.readings.reduce(
     (s, r) => s + (r.closing - r.opening),
     0
-  );
-  const totalRevenue = form.readings.reduce((s, r) => {
+  ) : 0;
+  
+  // Calculate base fuel revenue
+  const baseFuelRevenue = isDataLoaded ? form.readings.reduce((s, r) => {
     const rate = +form.dayRate?.[r.fuelType] || 0;
     return s + (r.closing - r.opening) * rate;
-  }, 0);
-  const totalLubeSales = form.lubeSales.reduce(
-    (s, l) => s + l.amount * l.quantity,
+  }, 0) : 0;
+  
+  // Calculate calibration fuel cost to subtract
+  const calibrationCost = isDataLoaded ? (form.nozzleTesting || []).reduce((s, t) => {
+    const rate = +form.dayRate?.[t.fuelType] || 0;
+    const quantity = +t.quantity || 0;
+    return s + (quantity * rate);
+  }, 0) : 0;
+  
+  // Net fuel revenue after calibration cost
+  const totalRevenue = baseFuelRevenue - calibrationCost;
+  
+  const totalLubeSales = isDataLoaded ? form.lubeSales.reduce(
+    (s, l) => s + (Number(l.amount) || 0),
     0
-  );
+  ) : 0;
 
   /* ================================================================== */
   return (
@@ -181,7 +206,7 @@ const AdminEditShiftPage = () => {
           <CardTitle className="text-lg">Sales</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {Object.entries(form.sales).map(([key, value]) => {
+          {Object.entries(form.sales || {}).map(([key, value]) => {
             const lockedKeys = [
               "deferralTotal",
               "advancePaymentTotal",
@@ -196,20 +221,21 @@ const AdminEditShiftPage = () => {
                 </Label>
                 <Input
                   type="number"
-                  min={1}
-                  value={value}
+                  min={0}
+                  step="0.01"
+                  value={value || ""}
                   disabled={isTotals}
                   readOnly={isTotals}
                   onChange={(e) =>
                     !isTotals &&
-                    handleChange("sales", key, getSafePositive(e.target.value))
+                    handleChange("sales", key, getSafeDecimal(e.target.value))
                   }
                   onBlur={(e) => {
                     if (
                       !isTotals &&
-                      (e.target.value === "" || +e.target.value <= 0)
+                      (e.target.value === "" || +e.target.value < 0)
                     ) {
-                      handleChange("sales", key, "1");
+                      handleChange("sales", key, "0");
                     }
                   }}
                   className={`bg-white border-gray-300 ${
@@ -222,9 +248,54 @@ const AdminEditShiftPage = () => {
         </CardContent>
       </Card>
 
+      {/* ────────── Day Rates ────────── */}
+      <Card className="border-blue-200 bg-blue-50/30">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            📊 Day Rates (₹/L)
+          </CardTitle>
+          <CardDescription>
+            Modify fuel rates for this shift only. Changes will only affect this shift's calculations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {Object.entries(form.dayRate || {}).map(([fuelType, rate]) => (
+            <div key={fuelType} className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                  {fuelType}
+                </span>
+                Rate (₹/L)
+              </Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={rate || ""}
+                onChange={(e) =>
+                  handleChange("dayRate", fuelType, getSafeDecimal(e.target.value))
+                }
+                onBlur={(e) => {
+                  if (e.target.value === "" || +e.target.value < 0) {
+                    handleChange("dayRate", fuelType, "0");
+                  }
+                }}
+                className="bg-white border-blue-300 focus:border-blue-500 focus:ring-blue-500"
+                placeholder="0.00"
+              />
+            </div>
+          ))}
+          {Object.keys(form.dayRate || {}).length === 0 && (
+            <div className="text-sm text-muted-foreground p-4 bg-gray-50 rounded-lg text-center">
+              No day rates available. Day rates will be populated once fuel readings are loaded.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* ────────── Fuel Readings ────────── */}
       <FuelReadings
-        readings={form.readings}
+        readings={form.readings || []}
         setForm={setForm}
       />
 
@@ -258,7 +329,7 @@ const FuelReadings = ({ readings, setForm }) => (
     </CardHeader>
     <CardContent>
       <div className="grid gap-6">
-        {readings.map((r, i) => (
+        {(readings || []).map((r, i) => (
           <div
             key={i}
             className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg"
@@ -269,17 +340,18 @@ const FuelReadings = ({ readings, setForm }) => (
               <Label className="text-sm font-medium">Closing Reading</Label>
               <Input
                 type="number"
-                min={1}
+                min={0}
+                step="any"
                 value={r.closing}
                 onChange={(e) => {
                   const updated = [...readings];
-                  updated[i].closing = getSafePositive(e.target.value);
+                  updated[i].closing = getSafeDecimal(e.target.value);
                   setForm((prev) => ({ ...prev, readings: updated }));
                 }}
                 onBlur={(e) => {
-                  if (e.target.value === "" || +e.target.value <= 0) {
+                  if (e.target.value === "" || +e.target.value < 0) {
                     const updated = [...readings];
-                    updated[i].closing = "1";
+                    updated[i].closing = "0";
                     setForm((prev) => ({ ...prev, readings: updated }));
                   }
                 }}
@@ -422,12 +494,13 @@ const NumberField = ({ label, value, onChange }) => (
     <Label className="text-sm font-medium">{label}</Label>
     <Input
       type="number"
-      min={1}
+      min={0}
+      step="any"
       value={value}
-      onChange={(e) => onChange(getSafePositive(e.target.value))}
+      onChange={(e) => onChange(getSafeDecimal(e.target.value))}
       onBlur={(e) => {
-        if (e.target.value === "" || +e.target.value <= 0) {
-          onChange("1");
+        if (e.target.value === "" || +e.target.value < 0) {
+          onChange("0");
         }
       }}
       className="bg-white border-gray-300"

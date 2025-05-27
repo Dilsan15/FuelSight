@@ -1,6 +1,6 @@
 import axios from "axios";
 
 export default axios.create({
-  baseURL: "https://petrol-pump-accounting.onrender.com/api/shifts",
+  baseURL: "http://localhost:5001/api/shifts",
 });
 

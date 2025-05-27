@@ -17,7 +17,7 @@ import { RefreshCw } from "lucide-react";
 
 import { useDayRates } from "@/Hooks/DayrateHooks/useDayRates";
 import { useCreateDayRate } from "@/Hooks/DayrateHooks/useCreateDayRates";
-import { getSafePositive } from "@/utils/handleSafeInput";
+import { getSafeDecimal } from "@/utils/handleSafeInput";
 
 const AdminDayRatePage = () => {
   const { dayRates, rateHistory, isLoading, refreshRates } = useDayRates();
@@ -115,7 +115,7 @@ const AdminDayRatePage = () => {
                     step="0.01"
                     value={rates[type]}
                     onChange={(e) =>
-                      handleChange(type, getSafePositive(e.target.value))
+                      handleChange(type, getSafeDecimal(e.target.value))
                     }
                     className="h-11"
                   />

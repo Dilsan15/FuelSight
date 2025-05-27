@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
   // Readings per fuel + nozzle with opening and closing values
   readings: [
     {
-      fuelType: { type: String, enum: ['XG', 'HSD', 'MS']},
+      fuelType: { type: String, enum: ['XG', 'HSD', 'MS'] },
       nozzle: { type: Number, required: true },
       closing: { type: Number, required: true }
     }
@@ -47,8 +47,8 @@ userSchema.statics.signup = async function ({
     throw Error('Invalid role. Role must be admin or worker.');
   }
 
-  if (!validator.isLength(stationName, { min: 2 }) || !/^[a-zA-Z\s1-9]+$/.test(stationName)) {
-    throw Error('Station name must be at least 2 letters and contain only letters/spaces');
+  if (!validator.isLength(stationName, { min: 2, max: 50 }) || !/^[a-zA-Z\s0-9]+$/.test(stationName)) {
+    throw Error('Station name must be 2-50 characters and contain only letters, numbers, and spaces');
   }
 
   const usernameExists = await this.findOne({ username });
@@ -112,8 +112,8 @@ userSchema.statics.updateUser = async function (id, updates) {
     throw Error('Username must only contain letters and numbers (no symbols)');
   }
 
-  if (stationName && (!validator.isLength(stationName, { min: 2 }) || !/^[a-zA-Z0-9\s]+$/.test(stationName))) {
-    throw Error('Station name must be at least 2 letters and contain only letters/spaces');
+  if (stationName && (!validator.isLength(stationName, { min: 2, max: 50 }) || !/^[a-zA-Z0-9\s]+$/.test(stationName))) {
+    throw Error('Station name must be 2-50 characters and contain only letters, numbers, and spaces');
   }
 
   if (role && !['admin', 'worker'].includes(role)) {

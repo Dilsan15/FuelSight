@@ -53,80 +53,79 @@ const defPayOrderSchema = new mongoose.Schema({
   },
   dueDate: {
     type: Date,
-    required: function() {
+    required: function () {
       return this.type === 'creditSale';
     },
     validate: {
-      validator: function(v) {
+      validator: function (v) {
         if (this.type !== 'creditSale') return true;
         return v > this.orderDate;
       },
       message: 'Due date must be after order date'
     },
-    default: function() {
+    default: function () {
       return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
     }
   },
   paymentType: {
     type: String,
     enum: ['QR', 'Cash', 'Card'],
-    required: function() {
+    required: function () {
       return this.type === 'creditBack';
     }
   },
   fuelType: {
     type: String,
     enum: ['HSD', 'MS', 'XG'],
-    required: function() {
-      return this.type === 'creditSale';
-    }
+    required: false  // Optional for admin orders
   },
   quantity: {
-  type: Number,
-  required() {
-    return this.type === 'creditSale';
-  },
-  min: [0, 'Quantity cannot be negative'],
+    type: Number,
+    required: false,  // Optional for admin orders
+    min: [0, 'Quantity cannot be negative'],
 
-  // 🔽 Setter: always store with exactly two decimals
-  set: v => (v == null ? v : Number(v.toFixed(2))),
+    // 🔽 Setter: always store with exactly two decimals
+    set: v => (v == null ? v : Number(v.toFixed(2))),
 
-  validate: {
-    validator(v) {
-      // no check needed for credit-back orders
-      if (this.type !== 'creditSale') return true;
-      return v > 0;
-    },
-    message: 'Quantity must be greater than 0 for credit sales'
+    validate: {
+      validator(v) {
+        // Allow undefined/null for admin orders
+        if (v == null) return true;
+        // no check needed for credit-back orders
+        if (this.type !== 'creditSale') return true;
+        return v > 0;
+      },
+      message: 'Quantity must be greater than 0 for credit sales'
+    }
   }
-}
-}, { 
+}, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
 // Pre-save middleware for validation
-defPayOrderSchema.pre('save', async function(next) {
+defPayOrderSchema.pre('save', async function (next) {
   if (this.isNew || this.isModified('type')) {
-    // Validate credit sale requirements
+    // Validate credit sale requirements (relaxed for admin orders)
     if (this.type === 'creditSale') {
-      if (!this.fuelType || !this.quantity || !this.dueDate) {
-        throw new Error('Credit sale requires fuelType, quantity and dueDate');
+      if (!this.dueDate) {
+        throw new Error('Credit sale requires dueDate');
       }
-      if (this.quantity <= 0) {
+      // Only validate quantity if it's provided
+      if (this.quantity != null && this.quantity <= 0) {
         throw new Error('Quantity must be greater than 0');
       }
       // Clear credit back specific fields
       this.paymentType = undefined;
     }
-    
+
     // Validate credit back requirements
     if (this.type === 'creditBack') {
       if (!this.paymentType) {
         throw new Error('Credit back requires payment type');
       }
-      // Clear credit sale specific fields
+      // Clear credit sale specific fields for credit back
       this.fuelType = undefined;
       this.quantity = undefined;
       this.dueDate = undefined;
@@ -136,14 +135,14 @@ defPayOrderSchema.pre('save', async function(next) {
 });
 
 // Virtual for calculating status
-defPayOrderSchema.virtual('status').get(function() {
+defPayOrderSchema.virtual('status').get(function () {
   if (this.type !== 'creditSale') return 'NA';
-  
+
   const now = new Date();
   const dueDate = new Date(this.dueDate);
-  
+
   if (now > dueDate) return 'OVERDUE';
-  if (now > new Date(dueDate.getTime() - 2 * 24 * 60 * 60 * 1000)) return  'DUE_SOON';
+  if (now > new Date(dueDate.getTime() - 2 * 24 * 60 * 60 * 1000)) return 'DUE_SOON';
   return 'ACTIVE';
 });
 

@@ -1,5 +1,9 @@
 require('dotenv').config();
 
+// Validate environment variables
+const validateEnv = require('./utils/validateEnv');
+validateEnv();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const morgan = require('morgan');
@@ -23,8 +27,8 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again after 15 minutes'
 });
 
-// Apply rate limiter to authentication routes
-app.use('/api/auth', limiter);
+// Apply rate limiter to all API routes
+app.use('/api', limiter);
 
 // CORS configuration
 const allowedOrigins = [
@@ -33,30 +37,12 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove any undefined values
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
+app.use(cors());
 
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Cache-Control',   // ✅ Already added before
-    'Pragma'           // ✅ NEW: fix current error
-  ]
-}));
 
 
 // Middleware
-app.use(express.json());
-app.use(morgan('dev'));
+app.use(express.json()); // Add size limit
 
 // Health check route
 app.get('/', (req, res) => {

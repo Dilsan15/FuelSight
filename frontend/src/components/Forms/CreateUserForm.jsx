@@ -10,7 +10,8 @@ import { useUsers } from "@/Hooks/AuthHooks/useUsers";
 import MultiSelect from "@/components/ui/multiselect";
 import {
   getSafePositive,
-  enforceOneIfEmptyOrZero,
+  getSafeDecimal,
+  enforceZeroIfEmpty,
 } from "@/utils/handleSafeInput";
 import { Icons } from "@/components/ui/icons";
 
@@ -72,11 +73,11 @@ const CreateUserForm = () => {
   const handleFuelSelect = (selected) => {
     const updatedNozzleConfig = { ...form.nozzleConfig };
     selected.forEach((f) => {
-      if (!updatedNozzleConfig[f]) updatedNozzleConfig[f] = 1;
+      if (!updatedNozzleConfig[f]) updatedNozzleConfig[f] = "";
     });
 
     const newReadings = selected.flatMap((fuelType) =>
-      Array.from({ length: updatedNozzleConfig[fuelType] }).map((_, i) => {
+      Array.from({ length: updatedNozzleConfig[fuelType] || 0 }).map((_, i) => {
         const existing = form.readings.find(
           (r) => r.fuelType === fuelType && r.nozzle === i + 1
         );
@@ -97,7 +98,7 @@ const CreateUserForm = () => {
   };
 
   const handleNozzleCountChange = (fuelType, count) => {
-    const nozzleCount = parseInt(count);
+    const nozzleCount = parseInt(count) || 0;
     const updatedReadings = [
       ...form.readings.filter((r) => r.fuelType !== fuelType),
       ...Array.from({ length: nozzleCount }).map((_, i) => {
@@ -114,7 +115,7 @@ const CreateUserForm = () => {
 
     setForm((prev) => ({
       ...prev,
-      nozzleConfig: { ...prev.nozzleConfig, [fuelType]: nozzleCount },
+      nozzleConfig: { ...prev.nozzleConfig, [fuelType]: count },
       readings: updatedReadings,
     }));
   };
@@ -271,21 +272,22 @@ const CreateUserForm = () => {
                             </Label>
                             <Input
                               type="number"
-                              min={1}
-                              value={form.nozzleConfig[fuelType] || 1}
+                              min={0}
+                              step="1"
+                              value={form.nozzleConfig[fuelType] || ""}
                               onChange={(e) => {
-                                const value = getSafePositive(e.target.value);
+                                const value = e.target.value;
                                 handleNozzleCountChange(
                                   fuelType,
-                                  value === "" ? "1" : value
+                                  value
                                 );
                               }}
                               onBlur={(e) => {
                                 if (
                                   e.target.value === "" ||
-                                  Number(e.target.value) <= 0
+                                  Number(e.target.value) < 0
                                 ) {
-                                  handleNozzleCountChange(fuelType, "1");
+                                  handleNozzleCountChange(fuelType, "");
                                 }
                               }}
                               className="w-24 bg-background"
@@ -307,24 +309,25 @@ const CreateUserForm = () => {
                                 </Label>
                                 <Input
                                   type="number"
-                                  min={1}
+                                  min={0}
+                                  step="any"
                                   value={r.closing}
                                   onChange={(e) =>
                                     handleReadingChange(
                                       fuelType,
                                       r.nozzle,
-                                      getSafePositive(e.target.value)
+                                      getSafeDecimal(e.target.value)
                                     )
                                   }
                                   onBlur={(e) => {
                                     if (
                                       e.target.value === "" ||
-                                      Number(e.target.value) <= 0
+                                      Number(e.target.value) < 0
                                     ) {
                                       handleReadingChange(
                                         fuelType,
                                         r.nozzle,
-                                        "1"
+                                        ""
                                       );
                                     }
                                   }}

@@ -1,5 +1,5 @@
 // AdminOrdersPage.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
@@ -71,13 +71,7 @@ const AdminOrdersPage = () => {
 
   const debouncedSearch = useDebounce(search, 300);
 
-  useEffect(() => {
-    const delay = setTimeout(() => setShowSkeletons(true), 150);
-    if (initializedTabs.current[activeTab]) fetchFilteredOrders();
-    return () => clearTimeout(delay);
-  }, [debouncedSearch, page, activeTab, filter]);
-
-  const fetchFilteredOrders = async () => {
+  const fetchFilteredOrdersCallback = useCallback(async () => {
     setLoading(true);
     try {
       const keywords = [debouncedSearch];
@@ -99,7 +93,15 @@ const AdminOrdersPage = () => {
       setLoading(false);
       setShowSkeletons(false);
     }
-  };
+  }, [debouncedSearch, page, activeTab, filter.fuelType, filter.dueInDays, filter.paymentType, fetchOrders]);
+
+  useEffect(() => {
+    const delay = setTimeout(() => setShowSkeletons(true), 150);
+    if (initializedTabs.current[activeTab]) fetchFilteredOrdersCallback();
+    return () => clearTimeout(delay);
+  }, [fetchFilteredOrdersCallback, activeTab]);
+
+
 
   const handleTabChange = (tab) => {
     setOrders([]);
@@ -189,7 +191,7 @@ const AdminOrdersPage = () => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -296,7 +298,7 @@ const AdminOrdersPage = () => {
                                 <AlertDialogAction
                                   onClick={async () => {
                                     await deleteOrder(order._id);
-                                    fetchFilteredOrders();
+                                    fetchFilteredOrdersCallback();
                                   }}
                                 >
                                   Delete

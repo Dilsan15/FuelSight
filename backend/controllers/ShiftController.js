@@ -10,8 +10,8 @@ const getDefaultDueDate = () => {
 // SUBMIT Shift
 const submitShift = async (req, res) => {
   try {
-
-    console.log(req.body)
+    console.log('🚀 Starting shift submission...');
+    console.log('📋 Request body:', JSON.stringify(req.body, null, 2));
     const { shift = {}, creditSales = [], creditBack = [] } = req.body;
     const {
       submittedByName,
@@ -24,14 +24,23 @@ const submitShift = async (req, res) => {
       date
     } = shift;
 
+    console.log('✅ Extracted shift data:', { submittedByName, timeType, readingsCount: readings.length });
+
     if (!submittedByName || !timeType) {
       return res.status(400).json({ error: "submittedByName and timeType are required." });
     }
 
-    // Sanitize sales numbers (monetary values)
+    // Sanitize and validate sales numbers (monetary values)
     const sanitizedSales = {};
     for (const [key, val] of Object.entries(sales)) {
-      sanitizedSales[key] = parseFloat((Number(val) || 0).toFixed(2));
+      const numVal = Number(val);
+      if (isNaN(numVal) || !isFinite(numVal)) {
+        sanitizedSales[key] = 0;
+      } else if (numVal < 0) {
+        return res.status(400).json({ error: `Sales values cannot be negative: ${key}` });
+      } else {
+        sanitizedSales[key] = parseFloat(numVal.toFixed(2));
+      }
     }
 
     const groupedReadings = readings.reduce((acc, curr) => {
@@ -57,12 +66,14 @@ const submitShift = async (req, res) => {
     const lubeRevenue = parseFloat(lubeSales.reduce(
       (sum, l) => sum + parseFloat((parseFloat(l.amount || 0)).toFixed(2)), 0).toFixed(2));
     const lost = parseFloat((parseFloat(sanitizedSales.lost || 0)).toFixed(2));
-    const total = parseFloat((fuelRevenue + lubeRevenue - lost).toFixed(2));
+    // TTS = Lube Sales + Fuel Revenue (Total Theoretical Sale)
+    const total = parseFloat((fuelRevenue + lubeRevenue).toFixed(2));
 
     const shiftDateParsed = Date.parse(date);
     const shiftDate = isNaN(shiftDateParsed) ? new Date() : new Date(shiftDateParsed);
     const shiftDateISO = shiftDate.toISOString().split("T")[0];
 
+    console.log('💾 Creating shift document...');
     const shiftDoc = await Shift.create({
       user: req.user._id,
       submittedByName,
@@ -88,6 +99,7 @@ const submitShift = async (req, res) => {
       })),
       total
     });
+    console.log('✅ Shift document created with ID:', shiftDoc._id);
 
     const accountMap = {};
 
@@ -180,6 +192,7 @@ const submitShift = async (req, res) => {
       await account.save();
     }
 
+    console.log('🔄 Updating user readings...');
     const userDoc = await User.findById(req.user._id);
     if (userDoc) {
       const updated = userDoc.readings || [];
@@ -197,6 +210,9 @@ const submitShift = async (req, res) => {
       }
       userDoc.readings = updated;
       await userDoc.save();
+      console.log('✅ User readings updated successfully');
+    } else {
+      console.log('❌ User document not found');
     }
 
     // 🔗 Link unlinked past orders for same user and date
@@ -247,7 +263,18 @@ const submitShift = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Shift submission error:', error);
-    res.status(500).json({ error: 'Server error submitting shift.' });
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      userId: req.user?._id,
+      submittedByName,
+      timeType
+    });
+    res.status(500).json({
+      error: 'Server error submitting shift.',
+      details: error.message
+    });
   }
 };
 
@@ -350,10 +377,10 @@ const getShifts = async (req, res) => {
       .sort({ shiftDateSubmitted: -1 })
       .skip(skip)
       .limit(limit)
-     .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
-     .populate({ path: "creditBack",  select: "amount code actName paymentType" })
-     .populate({ path: "user", select: "stationName" })
-     .lean();          // optional – send plain objects
+      .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
+      .populate({ path: "creditBack", select: "amount code actName paymentType" })
+      .populate({ path: "user", select: "stationName" })
+      .lean();          // optional – send plain objects
 
     const total = await Shift.countDocuments(filter);
 
@@ -374,11 +401,11 @@ const getShift = async (req, res) => {
 
   try {
     const shift = await Shift.findById(id)
-   
-     .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
-     .populate({ path: "creditBack",  select: "amount code actName paymentType" })
-     .populate({ path: "user", select: "stationName" })
-     .lean();          
+
+      .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
+      .populate({ path: "creditBack", select: "amount code actName paymentType" })
+      .populate({ path: "user", select: "stationName" })
+      .lean();
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found.' });
     }

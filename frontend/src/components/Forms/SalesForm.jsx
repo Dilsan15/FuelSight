@@ -6,7 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { formatINR } from "@/utils/formatting"; // 💰 Formatter
 import {
   getSafePositive,
-  enforceOneIfEmptyOrZero,
+  getSafeDecimal,
+  enforceZeroIfEmpty,
+  formatCurrencyInput,
 } from "@/utils/handleSafeInput";
 
 const SalesForm = ({
@@ -24,7 +26,7 @@ const SalesForm = ({
       ...formData,
       sales: {
         ...formData.sales,
-        [name]: getSafePositive(raw),
+        [name]: getSafeDecimal(raw),
       },
     });
   };
@@ -32,12 +34,12 @@ const SalesForm = ({
   const handleBlur = (e) => {
     const { name, value } = e.target;
     const raw = value.replace(/,/g, "");
-    if (raw === "" || Number(raw) <= 0) {
+    if (raw === "" || Number(raw) < 0) {
       setFormData({
         ...formData,
         sales: {
           ...formData.sales,
-          [name]: "1",
+          [name]: "0",
         },
       });
     }
@@ -77,9 +79,8 @@ const SalesForm = ({
             <Input
               type="text"
               name="cashWithManager"
-              inputMode="numeric"
-              min={1}
-              value={formatINR(formData.sales?.cashWithManager ?? "")}
+              inputMode="decimal"
+              value={formatCurrencyInput(formData.sales?.cashWithManager ?? "")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11"
@@ -93,9 +94,8 @@ const SalesForm = ({
             <Input
               type="text"
               name="qrTransfer"
-              inputMode="numeric"
-              min={1}
-              value={formatINR(formData.sales?.qrTransfer ?? "")}
+              inputMode="decimal"
+              value={formatCurrencyInput(formData.sales?.qrTransfer ?? "")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11"
@@ -109,9 +109,8 @@ const SalesForm = ({
             <Input
               type="text"
               name="card"
-              inputMode="numeric"
-              min={1}
-              value={formatINR(formData.sales?.card ?? "")}
+              inputMode="decimal"
+              value={formatCurrencyInput(formData.sales?.card ?? "")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11"
@@ -125,9 +124,8 @@ const SalesForm = ({
             <Input
               type="text"
               name="lost"
-              inputMode="numeric"
-              min={1}
-              value={formatINR(formData.sales?.lost ?? "")}
+              inputMode="decimal"
+              value={formatCurrencyInput(formData.sales?.lost ?? "")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11 border-red-200 focus:border-red-400 focus:ring-red-400"

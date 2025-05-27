@@ -22,24 +22,31 @@ const createDefPayOrder = async (req, res) => {
     } = req.body;
 
     if (!userId) {
-      return res.status(400).json({ error: 'Pump worker (user) must be selected for order submission.' });
+      return res.status(400).json({ error: 'user must be selected for order submission.' });
     }
 
-    if (!shiftDate) {
-      return res.status(400).json({
-        error: 'shiftDate is required to associate the order with a shift.'
+    // Validate amount
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || !isFinite(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Amount must be a valid positive number.' });
+    }
+
+    let shift = null;
+    let orderDate = new Date();
+
+    // For worker accounts, try to find an associated shift
+    if (shiftDate) {
+      const dateStart = new Date(shiftDate);
+      dateStart.setHours(0, 0, 0, 0);
+      const dateEnd = new Date(shiftDate);
+      dateEnd.setHours(23, 59, 59, 999);
+      orderDate = new Date(shiftDate);
+
+      shift = await Shift.findOne({
+        user: userId,
+        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
       });
     }
-
-    const dateStart = new Date(shiftDate);
-    dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(shiftDate);
-    dateEnd.setHours(23, 59, 59, 999);
-
-    const shift = await Shift.findOne({
-      user: userId,
-      shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
-    });
 
     const account = await DefPayAccount.findById(defPayAccount);
     if (!account) return res.status(404).json({ error: 'Account not found.' });
@@ -62,7 +69,7 @@ const createDefPayOrder = async (req, res) => {
       type,
       amount,
       shiftId: shift ? shift._id : undefined,
-      orderDate: new Date(shiftDate),
+      orderDate,
       paymentType: type === 'creditBack' ? paymentType : undefined,
       fuelType: type === 'creditSale' ? fuelType : undefined,
       quantity: type === 'creditSale' ? quantity : undefined,
@@ -96,13 +103,16 @@ const createDefPayOrder = async (req, res) => {
 
 // UPDATE
 const updateDefPayOrder = async (req, res) => {
+  console.log('🚀 UPDATE FUNCTION CALLED!');
   const { id } = req.params;
+  console.log('🔍 Order ID received:', id);
+  console.log('🔍 Request body:', req.body);
+
   const {
     userId,
     accountId,
     type,
     amount,
-    shiftId,
     shiftDate,
     paymentType,
     fuelType,
@@ -113,7 +123,16 @@ const updateDefPayOrder = async (req, res) => {
   } = req.body;
 
   try {
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log('❌ Invalid ObjectId format:', id);
+      return res.status(400).json({ error: 'Invalid order ID format.' });
+    }
+
+    console.log('🔍 Looking for order with ID:', id);
     const existingOrder = await DefPayOrder.findById(id);
+    console.log('🔍 Found order:', existingOrder ? 'YES' : 'NO');
+
     if (!existingOrder) {
       return res.status(404).json({ error: 'Order not found.' });
     }
@@ -124,83 +143,199 @@ const updateDefPayOrder = async (req, res) => {
     const newAmount = Number(amount);
 
     // === Update associated account
+    console.log('🔍 Looking for old account:', existingOrder.defPayAccount);
     const oldAccount = await DefPayAccount.findById(existingOrder.defPayAccount);
+    console.log('🔍 Old account found:', oldAccount ? 'YES' : 'NO');
+
+    console.log('🔍 Looking for new account:', accountId);
     const newAccount = await DefPayAccount.findById(accountId);
+    console.log('🔍 New account found:', newAccount ? 'YES' : 'NO');
 
-    if (!oldAccount || !newAccount) {
-      return res.status(404).json({ error: 'Account not found.' });
+    // Check if new account exists (required)
+    if (!newAccount) {
+      console.log('❌ New account not found, returning 404');
+      return res.status(404).json({ error: 'New account not found.' });
     }
 
-    // === Update associated shift
-    const newShift = shiftId ? await Shift.findById(shiftId) : null;
+    // Old account might be deleted - that's okay, we'll handle it
+    const oldAccountExists = !!oldAccount;
 
-    // === Revert old account balance
-    if (oldType === 'creditBack') {
-      oldAccount.balance += oldAmount;
-    } else if (oldType === 'creditSale') {
-      oldAccount.balance -= oldAmount;
+    // === Find associated shift based on user and shift date
+    let newShift = null;
+    if (shiftDate && userId) {
+      const dateStart = new Date(shiftDate);
+      dateStart.setHours(0, 0, 0, 0);
+      const dateEnd = new Date(shiftDate);
+      dateEnd.setHours(23, 59, 59, 999);
+
+      newShift = await Shift.findOne({
+        user: userId,
+        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
+      });
     }
 
-    // === Apply new account balance
-    if (newType === 'creditBack') {
-      newAccount.balance -= newAmount;
-    } else if (newType === 'creditSale') {
-      newAccount.balance += newAmount;
-    }
+    // === Calculate balance changes properly ===
+    const isSameAccount = oldAccountExists && oldAccount._id.toString() === newAccount._id.toString();
 
-    // === Update payment history
-    oldAccount.paymentHistory = oldAccount.paymentHistory.filter(
-      entry => entry.defPayOrder.toString() !== id
-    );
+    if (isSameAccount) {
+      // SAME ACCOUNT: Calculate the net change
+      const oldEffect = oldType === 'creditBack' ? oldAmount : -oldAmount;
+      const newEffect = newType === 'creditBack' ? newAmount : -newAmount;
+      const netChange = newEffect - oldEffect;
 
-    newAccount.paymentHistory.push({
-      amount: newType === 'creditBack' ? -newAmount : newAmount,
-      date: new Date(),
-      defPayOrder: id
-    });
+      oldAccount.balance += netChange;
 
-    await oldAccount.save();
-    if (oldAccount._id.toString() !== newAccount._id.toString()) {
+      // Update payment history: remove old entry and add new one
+      oldAccount.paymentHistory = oldAccount.paymentHistory.filter(
+        entry => entry.defPayOrder.toString() !== id
+      );
+      oldAccount.paymentHistory.push({
+        amount: newType === 'creditBack' ? newAmount : -newAmount,
+        date: new Date(),
+        defPayOrder: id
+      });
+
+      await oldAccount.save();
+      console.log(`✅ Updated same account balance by ${netChange}`);
+
+    } else {
+      // DIFFERENT ACCOUNTS OR OLD ACCOUNT DELETED
+
+      if (oldAccountExists) {
+        // Revert old account balance (only if old account still exists)
+        if (oldType === 'creditBack') {
+          oldAccount.balance -= oldAmount; // Revert: customer had paid back, so reduce balance
+        } else if (oldType === 'creditSale') {
+          oldAccount.balance += oldAmount; // Revert: customer had credit, so increase balance
+        }
+
+        // Remove from old account payment history
+        oldAccount.paymentHistory = oldAccount.paymentHistory.filter(
+          entry => entry.defPayOrder.toString() !== id
+        );
+
+        await oldAccount.save();
+        console.log(`✅ Reverted balance from old account ${oldAccount._id}`);
+      } else {
+        console.log(`⚠️ Old account was deleted - skipping balance reversion`);
+      }
+
+      // Apply new account balance
+      if (newType === 'creditBack') {
+        newAccount.balance += newAmount;  // Customer paying back debt
+      } else if (newType === 'creditSale') {
+        newAccount.balance -= newAmount;  // Customer getting more credit
+      }
+
+      // Add to new account payment history
+      newAccount.paymentHistory.push({
+        amount: newType === 'creditBack' ? newAmount : -newAmount,
+        date: new Date(),
+        defPayOrder: id
+      });
+
       await newAccount.save();
+      console.log(`✅ Applied balance to new account ${newAccount._id}`);
     }
 
+    // === Handle shift updates ===
     const oldShiftId = existingOrder.shiftId?.toString();
     const newShiftId = newShift?._id?.toString();
+
+    console.log('🔍 SHIFT DEBUG:');
+    console.log('- Existing order shiftId:', existingOrder.shiftId);
+    console.log('- Old shift ID (string):', oldShiftId);
+    console.log('- New shift found:', newShift ? 'YES' : 'NO');
+    console.log('- New shift ID (string):', newShiftId);
+    console.log('- User ID from request:', userId);
+    console.log('- Shift date from request:', shiftDate);
 
     const salesKeyOld = oldType === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
     const salesKeyNew = newType === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
 
-    // Always revert from old shift if it exists
-    if (oldShiftId) {
-      const oldShift = await Shift.findById(oldShiftId);
-      if (oldShift) {
-        const oldKey = oldType === 'creditBack' ? 'creditBack' : 'creditSales';
-        oldShift[oldKey] = oldShift[oldKey].filter(oId => oId.toString() !== id);
-        oldShift.sales[salesKeyOld] = (oldShift.sales[salesKeyOld] || 0) - oldAmount;
-        await oldShift.save();
+    // Check if this is the same shift
+    const isSameShift = oldShiftId && newShiftId && oldShiftId === newShiftId;
+    console.log('- Is same shift?', isSameShift);
+
+    if (isSameShift) {
+      // SAME SHIFT: Just update the totals and handle type changes
+      const shift = await Shift.findById(oldShiftId);
+      if (shift) {
+        // Ensure sales field exists
+        if (!shift.sales) shift.sales = {};
+
+        // Update totals: subtract old amount, add new amount
+        shift.sales[salesKeyOld] = Math.max(0, (shift.sales[salesKeyOld] || 0) - oldAmount);
+        shift.sales[salesKeyNew] = (shift.sales[salesKeyNew] || 0) + newAmount;
+
+        // Handle type changes within same shift
+        if (oldType !== newType) {
+          const oldKey = oldType === 'creditBack' ? 'creditBack' : 'creditSales';
+          const newKey = newType === 'creditBack' ? 'creditBack' : 'creditSales';
+
+          // Remove from old type array and add to new type array
+          shift[oldKey] = shift[oldKey].filter(oId => oId.toString() !== id);
+          if (!shift[newKey].includes(id)) {
+            shift[newKey].push(id);
+          }
+        }
+        // If type is the same, order stays in the same array - no need to move it
+
+        await shift.save();
+        console.log(`✅ Updated order ${id} in same shift ${oldShiftId}`);
+      }
+    } else {
+      // DIFFERENT SHIFTS: Remove from old, add to new
+
+      // Step 1: Remove from old shift if it exists
+      if (oldShiftId) {
+        const oldShift = await Shift.findById(oldShiftId);
+        if (oldShift) {
+          const oldKey = oldType === 'creditBack' ? 'creditBack' : 'creditSales';
+
+          // Remove order from old shift's array
+          oldShift[oldKey] = oldShift[oldKey].filter(oId => oId.toString() !== id);
+
+          // Remove old amount from totals
+          if (!oldShift.sales) oldShift.sales = {};
+          oldShift.sales[salesKeyOld] = Math.max(0, (oldShift.sales[salesKeyOld] || 0) - oldAmount);
+
+          await oldShift.save();
+          console.log(`✅ Removed order ${id} from old shift ${oldShiftId}`);
+        }
+      }
+
+      // Step 2: Add to new shift if it exists
+      if (newShift) {
+        const newKey = newType === 'creditBack' ? 'creditBack' : 'creditSales';
+
+        // Add order to new shift's array (if not already there)
+        if (!newShift[newKey].includes(id)) {
+          newShift[newKey].push(id);
+        }
+
+        // Add new amount to totals
+        if (!newShift.sales) newShift.sales = {};
+        newShift.sales[salesKeyNew] = (newShift.sales[salesKeyNew] || 0) + newAmount;
+
+        await newShift.save();
+        console.log(`✅ Added order ${id} to new shift ${newShiftId}`);
       }
     }
 
-    // Apply to new shift (if any)
-    if (newShift) {
-      const listKey = newType === 'creditBack' ? 'creditBack' : 'creditSales';
-      if (!newShift[listKey].includes(id)) {
-        newShift[listKey].push(id);
-      }
-      newShift.sales[salesKeyNew] = (newShift.sales[salesKeyNew] || 0) + Number(newAmount);
-      await newShift.save();
-    }
-
-    // Update the order
+    // Update the order with fresh account information
     const updatePayload = {
       user: userId,
       defPayAccount: accountId,
       type: newType,
       amount: newAmount,
-      shiftId: newShift?._id,
+      shiftId: newShift?._id || existingOrder.shiftId, // Keep existing shiftId if no new shift found
       submittedByName,
       description,
-      orderDate: new Date(shiftDate),
+      orderDate: shiftDate ? new Date(shiftDate) : existingOrder.orderDate,
+      // Update account-related fields with fresh data
+      code: newAccount.code,
+      actName: `${newAccount.firstName} ${newAccount.lastName}`,
       paymentType: newType === 'creditBack' ? paymentType : undefined,
       fuelType: newType === 'creditSale' ? fuelType : undefined,
       quantity: newType === 'creditSale' ? quantity : undefined,
@@ -212,6 +347,7 @@ const updateDefPayOrder = async (req, res) => {
       runValidators: true
     });
 
+    console.log(`✅ Order ${id} updated successfully`);
     res.status(200).json(updatedOrder);
   } catch (err) {
     console.error('Update error:', err);
@@ -224,10 +360,10 @@ const deleteDefPayOrder = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const order = await DefPayOrder.findByIdAndDelete(id);
+    const order = await DefPayOrder.findById(id);
     if (!order) return res.status(404).json({ error: 'Order not found.' });
 
-    // === Update associated shift
+    // === Update associated shift BEFORE deleting the order
     if (order.shiftId) {
       const shift = await Shift.findById(order.shiftId);
       if (shift) {
@@ -241,27 +377,35 @@ const deleteDefPayOrder = async (req, res) => {
         if (!shift.sales) shift.sales = {};
 
         // Subtract amount safely
-        shift.sales[salesKey] = (shift.sales[salesKey] || 0) - order.amount;
+        shift.sales[salesKey] = Math.max(0, (shift.sales[salesKey] || 0) - order.amount);
 
         await shift.save();
+        console.log(`✅ Removed order ${id} from shift ${order.shiftId}`);
       }
     }
 
     // === Update associated account
     const account = await DefPayAccount.findById(order.defPayAccount);
     if (account) {
+      // Revert the balance changes
       if (order.type === 'creditBack') {
-        account.balance -= order.amount;
+        account.balance -= order.amount; // Customer had paid back, so reduce balance
       } else if (order.type === 'creditSale') {
-        account.balance += order.amount;
+        account.balance += order.amount; // Customer had credit, so increase balance
       }
 
+      // Remove from payment history
       account.paymentHistory = account.paymentHistory.filter(
         entry => entry.defPayOrder.toString() !== id
       );
 
       await account.save();
+      console.log(`✅ Updated account ${order.defPayAccount} balance`);
     }
+
+    // Now delete the order
+    await DefPayOrder.findByIdAndDelete(id);
+    console.log(`✅ Order ${id} deleted successfully`);
 
     res.status(200).json({ message: '✅ Order deleted and shift/account updated.' });
   } catch (err) {
@@ -274,7 +418,6 @@ const deleteDefPayOrder = async (req, res) => {
 const getDefPayOrder = async (req, res) => {
   const { id } = req.params;
   try {
-    console.log("hello")
     const order = await DefPayOrder.findById(id)
       .populate('user defPayAccount shiftId');
     if (!order) return res.status(404).json({ error: 'Order not found.' });

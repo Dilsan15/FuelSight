@@ -57,7 +57,7 @@
           lost: "0",
         },
         readings: [],
-        thrownOutFuel: [],
+        nozzleTesting: [],
         lubeSales: [],
       },
       creditSales: [],
@@ -67,21 +67,21 @@
     const hasSetRates = useRef(false);
 
     useEffect(() => {
-      if (dayRates && !hasSetRates.current) {
+      if (dayRates?.rates && !hasSetRates.current) {
         setFormData((prev) => ({
           ...prev,
           shift: {
             ...prev.shift,
             dayRate: {
-              XG: dayRates.rates.XG,
-              HSD: dayRates.rates.HSD,
-              MS: dayRates.rates.MS,
+              XG: dayRates.rates.XG || "",
+              HSD: dayRates.rates.HSD || "",
+              MS: dayRates.rates.MS || "",
             },
           },
         }));
         hasSetRates.current = true;
       }
-    }, [dayRates]);
+    }, [dayRates?.rates]);
 
     useEffect(() => {
       const isInitial = formData.shift.readings.length === 0;
@@ -98,7 +98,7 @@
         const uniqueFuelTypes = [
           ...new Set(user.readings.map((r) => r.fuelType)),
         ];
-        const defaultThrownOutFuel = uniqueFuelTypes.map((fuelType) => ({
+        const defaultNozzleTesting = uniqueFuelTypes.map((fuelType) => ({
           fuelType,
           quantity: "0",
         }));
@@ -108,11 +108,11 @@
           shift: {
             ...prev.shift,
             readings: defaultReadings,
-            thrownOutFuel: defaultThrownOutFuel,
+            nozzleTesting: defaultNozzleTesting,
           },
         }));
       }
-    }, [user, formData.shift.readings.length]);
+    }, [user?.readings, formData.shift.readings.length]);
 
     const nextStep = () => setStep((prev) => prev + 1);
     const prevStep = () => setStep((prev) => Math.max(0, prev - 1));
@@ -129,17 +129,17 @@
 
     const handleSubmitAll = async (finalData = formData) => {
       try {
-        const result = await submitShift({
+        await submitShift({
           shift: finalData.shift,
           creditSales: finalData.creditSales,
           creditBack: finalData.creditBack,
         });
         
-        navigate("/");
-        return true; // ✅ indicate success
+        // User will be automatically logged out after successful submission
+        return true;
       } catch (err) {
         console.error(err);
-        return false; // ✅ indicate failure
+        return false;
       }
     };
 
@@ -211,6 +211,11 @@
           {isSubmitting && (
             <div className="text-blue-600 text-sm font-medium">
               Submitting shift...
+            </div>
+          )}
+          {error && (
+            <div className="text-red-600 text-sm font-medium bg-red-50 p-3 rounded-lg border border-red-200">
+              {error}
             </div>
           )}
           {renderStep()}
