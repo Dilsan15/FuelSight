@@ -175,7 +175,7 @@ const AdminAccountSummaryPage = () => {
                   </div>
                   <div className="text-2xl font-bold">
                     {account.paymentHistory?.filter(
-                      (entry) => entry.defPayOrder?.type === "creditSales"
+                      (entry) => entry.defPayOrder?.type === "creditSale"
                     ).length || 0}
                   </div>
                 </div>
@@ -214,14 +214,14 @@ const AdminAccountSummaryPage = () => {
                           <div className="flex items-center gap-2">
                             <Badge
                               variant={
-                                order.type === "creditSales"
+                                order.type === "creditSale"
                                   ? "secondary"
                                   : "default"
                               }
                             >
-                              {order.type === "creditSales"
-                                ? "Credit Back"
-                                : "Credit Sale"}
+                              {order.type === "creditSale"
+                                ? "Credit Sale"
+                                : "Credit Back"}
                             </Badge>
                             <span className="font-mono">{order.code}</span>
                           </div>
@@ -244,7 +244,7 @@ const AdminAccountSummaryPage = () => {
                             </div>
                           </div>
 
-                          {order.type === "creditSales" && (
+                          {order.type === "creditSale" && (
                             <>
                               {order.fuelType && (
                                 <div>
@@ -277,7 +277,7 @@ const AdminAccountSummaryPage = () => {
                             </>
                           )}
 
-                          {order.type === "creditSales" && order.paymentType && (
+                          {order.type === "creditBack" && order.paymentType && (
                             <div>
                               <div className="text-muted-foreground">
                                 Payment Type
