@@ -120,20 +120,21 @@ const AdminShiftSummaryPage = () => {
   // Adjusted fuel revenue (subtract calibration cost)
   const adjustedFuelRevenue = totalFuelRevenue - totalCalibrationCost;
 
-  // TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
+  // TTS = Fuel Revenue + Lube Sales + Credit Back (Total Theoretical Sale)
   const totalLubeSales = lubeSales.reduce(
     (sum, sale) => sum + parseFloat(sale.amount || 0),
     0
   );
-  const TTS = adjustedFuelRevenue + totalLubeSales;
+  const TTS = adjustedFuelRevenue + totalLubeSales + totalCreditBack;
 
   // Self-reported (for reconciliation)
   const qrTransfer = Number(sales.qrTransfer || 0);
   const card = Number(sales.card || 0);
+  const cheques = Number(sales.cheques || 0);
   const managerCash = Number(sales.cashWithManager || 0);
   const lost = Number(sales.lost || 0);
   const cashInHand = Number(sales.cashInHand || 0);
-  const selfReported = qrTransfer + card + managerCash;
+  const selfReported = qrTransfer + card + cheques + managerCash;
 
   /* ---------- group readings by fuel type ---------- */
   const groupedReadings = readings.reduce((acc, curr) => {
@@ -171,7 +172,7 @@ const AdminShiftSummaryPage = () => {
                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                 <AlertDialogDescription>
                   This action cannot be undone. This will permanently delete the
-                  shift.
+                  shift and all associated orders. Account balances will be updated accordingly.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -222,86 +223,6 @@ const AdminShiftSummaryPage = () => {
         </CardContent>
       </Card>
 
-      {/* Net Fuel Summary */}
-      <Card className="bg-white border-gray-200 shadow-md rounded-xl">
-        <CardContent className="p-6">
-          <h3 className="text-xl font-semibold mb-4 text-gray-900">Net Fuel Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Object.entries(groupedReadings).map(([fuelType, readings]) => {
-              // Calculate total volume for this fuel type
-              const totalVolume = readings.reduce((sum, r) => sum + (r.closing - r.opening), 0);
-              
-              // Get calibration amount for this fuel type
-              const calibrationAmount = nozzleTesting
-                .filter(t => t.fuelType === fuelType)
-                .reduce((sum, t) => sum + Number(t.quantity || 0), 0);
-              
-              // Net volume after calibration
-              const netVolume = totalVolume - calibrationAmount;
-              
-              // Rate and revenue
-              const rate = Number(dayRate[fuelType] || 0);
-              const netRevenue = netVolume * rate;
-              
-              return (
-                <div key={fuelType} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h4 className="font-semibold text-lg text-gray-800 mb-3">{fuelType}</h4>
-                  
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Gross Volume</span>
-                      <span className="font-medium text-gray-900">{totalVolume.toFixed(2)} L</span>
-                    </div>
-                    
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Calibration</span>
-                      <span className="font-medium text-red-500">-{calibrationAmount.toFixed(2)} L</span>
-                    </div>
-                    
-                    <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
-                      <span className="text-gray-800">Net Volume</span>
-                      <span className="text-gray-900">{netVolume.toFixed(2)} L</span>
-                    </div>
-                    
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Rate</span>
-                      <span className="font-medium text-gray-900">₹{rate.toFixed(2)}/L</span>
-                    </div>
-                    
-                    <div className="flex justify-between bg-white p-2 rounded mt-2">
-                      <span className="text-sm font-medium text-gray-800">Net Revenue</span>
-                      <span className="font-bold text-blue-600">{formatINR(netRevenue)}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Net Totals */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-sm text-gray-600">Total Gross Volume</div>
-                <div className="text-xl font-bold text-gray-800">{totalFuelSoldL.toFixed(2)} L</div>
-              </div>
-              <div className="text-center">
-                <div className="text-sm text-gray-600">Total Calibration</div>
-                <div className="text-xl font-bold text-red-600">
-                  -{nozzleTesting.reduce((sum, t) => sum + Number(t.quantity || 0), 0).toFixed(2)} L
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-sm text-gray-600">Total Net Volume</div>
-                <div className="text-xl font-bold text-green-600">
-                  {(totalFuelSoldL - nozzleTesting.reduce((sum, t) => sum + Number(t.quantity || 0), 0)).toFixed(2)} L
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* TTS & Cash Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* TTS Calculation */}
@@ -326,6 +247,12 @@ const AdminShiftSummaryPage = () => {
                   {formatINR(totalLubeSales)}
                 </span>
               </div>
+              <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Credit Back</span>
+                <span className="font-semibold text-gray-900 text-lg">
+                  {formatINR(totalCreditBack)}
+                </span>
+              </div>
               <div className="flex justify-between items-center py-3 bg-gray-50 rounded-lg px-4">
                 <span className="text-gray-900 font-semibold text-lg">Total TTS</span>
                 <span className="font-bold text-gray-900 text-xl">{formatINR(TTS)}</span>
@@ -345,7 +272,7 @@ const AdminShiftSummaryPage = () => {
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-gray-600 font-medium">TTS (Fuel + Lube)</span>
+                <span className="text-gray-600 font-medium">TTS (Fuel + Lube + Credit Back)</span>
                 <span className="font-medium text-green-600">
                   +{formatINR(TTS)}
                 </span>
@@ -360,6 +287,12 @@ const AdminShiftSummaryPage = () => {
                 <span className="text-gray-600 font-medium">Card Payments</span>
                 <span className="font-medium text-red-500">
                   -{formatINR(card)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 font-medium">Cheques</span>
+                <span className="font-medium text-red-500">
+                  -{formatINR(cheques)}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-gray-100">
@@ -382,7 +315,7 @@ const AdminShiftSummaryPage = () => {
               </div>
               <div className="flex justify-between items-center py-3 bg-gray-50 rounded-lg px-4 mt-4">
                 <span className="text-gray-900 font-semibold text-lg">Cash in Hand</span>
-                <span className="font-bold text-gray-900 text-xl">{formatINR(TTS - qrTransfer - card - managerCash - totalCreditSales - lost)}</span>
+                <span className="font-bold text-gray-900 text-xl">{formatINR(TTS - qrTransfer - card - cheques - managerCash - totalCreditSales - lost)}</span>
               </div>
             </div>
           </CardContent>
@@ -452,6 +385,10 @@ const AdminShiftSummaryPage = () => {
                 <span className="font-medium">{formatINR(sales.card)}</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b">
+                <span className="text-gray-600">Cheques</span>
+                <span className="font-medium">{formatINR(sales.cheques)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b">
                 <span className="text-gray-600">Lost/Stolen</span>
                 <span className="font-medium text-red-600">
                   {formatINR(sales.lost)}
@@ -459,7 +396,7 @@ const AdminShiftSummaryPage = () => {
               </div>
               <div className="flex justify-between items-center py-2 font-semibold">
                 <span>Cash in Hand</span>
-                <span>{formatINR(TTS - qrTransfer - card - managerCash - totalCreditSales - lost)}</span>
+                <span>{formatINR(TTS - qrTransfer - card - cheques - managerCash - totalCreditSales - lost)}</span>
               </div>
             </div>
           </CardContent>
@@ -560,7 +497,7 @@ const AdminShiftSummaryPage = () => {
       </div>
 
       {/* Credit Sales and Credit Backs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Credit Sales */}
         {creditSales.length > 0 && (
           <Card className="border border-gray-200 shadow-md rounded-xl">
@@ -571,49 +508,60 @@ const AdminShiftSummaryPage = () => {
                   (Total: {formatINR(totalCreditSales)})
                 </span>
               </h3>
-              <div className="space-y-3">
-                {creditSales.map((d, i) => (
-                  <Link
-                    key={i}
-                    to={`/order-summary/${d._id}`}
-                    className="block p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                  >
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-gray-600">Code:</span>{" "}
-                        <span className="font-medium">{d.code}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Account:</span>{" "}
-                        <span className="font-medium">{d.actName}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Amount:</span>{" "}
-                        <span className="font-medium">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="text-left p-3 font-medium text-gray-600">Code</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Account</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Amount</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Fuel</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Quantity</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Due Date</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Description</th>
+                      <th className="text-center p-3 font-medium text-gray-600">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditSales.map((d, i) => (
+                      <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="p-3">
+                          <span className="font-mono text-sm">{d.code}</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-medium">{d.actName}</span>
+                        </td>
+                        <td className="p-3 text-right font-medium">
                           {formatINR(d.amount)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Fuel:</span>{" "}
-                        <span className="font-medium">
-                          {d.fuelType} - {d.quantity} L
-                        </span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-gray-600">Due:</span>{" "}
-                        <span className="font-medium">
-                          {formatDateUTC(d.dueDate)}
-                        </span>
-                      </div>
-                      {d.description && (
-                        <div className="col-span-2">
-                          <span className="text-gray-600">Note:</span>{" "}
-                          <span className="font-medium">{d.description}</span>
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                ))}
+                        </td>
+                        <td className="p-3">
+                          <span className="font-medium">{d.fuelType}</span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className="font-medium">{d.quantity} L</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-sm">{formatDateUTC(d.dueDate)}</span>
+                        </td>
+                        <td className="p-3">
+                          {d.description && (
+                            <span className="text-sm text-gray-600 max-w-32 truncate" title={d.description}>
+                              {d.description}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          <Link
+                            to={`/order-summary/${d._id}`}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          >
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
@@ -629,41 +577,52 @@ const AdminShiftSummaryPage = () => {
                   (Total: {formatINR(totalCreditBack)})
                 </span>
               </h3>
-              <div className="space-y-3">
-                {creditBack.map((p, i) => (
-                  <Link
-                    key={i}
-                    to={`/order-summary/${p._id}`}
-                    className="block p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                  >
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-gray-600">Code:</span>{" "}
-                        <span className="font-medium">{p.code}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Account:</span>{" "}
-                        <span className="font-medium">{p.actName}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Amount:</span>{" "}
-                        <span className="font-medium">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="text-left p-3 font-medium text-gray-600">Code</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Account</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Amount</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Payment Type</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Description</th>
+                      <th className="text-center p-3 font-medium text-gray-600">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditBack.map((p, i) => (
+                      <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="p-3">
+                          <span className="font-mono text-sm">{p.code}</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-medium">{p.actName}</span>
+                        </td>
+                        <td className="p-3 text-right font-medium">
                           {formatINR(p.amount)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Type:</span>{" "}
-                        <span className="font-medium">{p.paymentType}</span>
-                      </div>
-                      {p.description && (
-                        <div className="col-span-2">
-                          <span className="text-gray-600">Note:</span>{" "}
-                          <span className="font-medium">{p.description}</span>
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                ))}
+                        </td>
+                        <td className="p-3">
+                          <span className="font-medium">{p.paymentType}</span>
+                        </td>
+                        <td className="p-3">
+                          {p.description && (
+                            <span className="text-sm text-gray-600 max-w-32 truncate" title={p.description}>
+                              {p.description}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          <Link
+                            to={`/order-summary/${p._id}`}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          >
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>

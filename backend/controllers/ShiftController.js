@@ -2,6 +2,8 @@ const Shift = require('../models/ShiftModel');
 const DefPayOrder = require('../models/DefPayOrderModel');
 const DefPayAccount = require('../models/DefPayAccountModel');
 const User = require("../models/UserModel");
+const { withTransactionRetry } = require('../utils/transactionHelper');
+const { roundHalfUp, toSafeNumber, safeAdd, safeSubtract, safeMultiply } = require('../utils/numberUtils');
 
 const getDefaultDueDate = () => {
   return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
@@ -9,29 +11,36 @@ const getDefaultDueDate = () => {
 
 // SUBMIT Shift
 const submitShift = async (req, res) => {
+  const { shift, creditSales = [], creditBack = [] } = req.body;
+  const { sales, readings, dayRate, lubeSales = [], nozzleTesting = [] } = shift;
+
   try {
-    console.log('🚀 Starting shift submission...');
-    console.log('📋 Request body:', JSON.stringify(req.body, null, 2));
-    const { shift = {}, creditSales = [], creditBack = [] } = req.body;
-    const {
-      submittedByName,
-      timeType,
-      sales = {},
-      readings = [],
-      dayRate = {},
-      lubeSales = [],
-      nozzleTesting = [],
-      date
-    } = shift;
+    // Validate required fields
+    if (!shift.submittedByName || !shift.timeType || !readings || !dayRate) {
+      return res.status(400).json({ error: 'Missing required shift data.' });
+    }
 
-    console.log('✅ Extracted shift data:', { submittedByName, timeType, readingsCount: readings.length });
+    // Validate readings
+    if (!Array.isArray(readings) || readings.length === 0) {
+      return res.status(400).json({ error: 'At least one reading is required.' });
+    }
 
-    if (!submittedByName || !timeType) {
-      return res.status(400).json({ error: "submittedByName and timeType are required." });
+    for (const reading of readings) {
+      if (!reading.fuelType || reading.opening == null || reading.closing == null) {
+        return res.status(400).json({ error: 'All readings must have fuelType, opening, and closing values.' });
+      }
+      if (reading.closing < reading.opening) {
+        return res.status(400).json({ error: 'Closing reading cannot be less than opening reading.' });
+      }
     }
 
     // Sanitize and validate sales numbers (monetary values)
     const sanitizedSales = {};
+    const expectedSalesFields = [
+      'cashInHand', 'cashWithManager', 'qrTransfer', 'card', 'cheques',
+      'creditSalesTotal', 'creditBackTotal', 'lost'
+    ];
+
     for (const [key, val] of Object.entries(sales)) {
       const numVal = Number(val);
       if (isNaN(numVal) || !isFinite(numVal)) {
@@ -39,172 +48,195 @@ const submitShift = async (req, res) => {
       } else if (numVal < 0) {
         return res.status(400).json({ error: `Sales values cannot be negative: ${key}` });
       } else {
-        sanitizedSales[key] = parseFloat(numVal.toFixed(2));
+        sanitizedSales[key] = roundHalfUp(numVal, 2);
       }
     }
 
-    const groupedReadings = readings.reduce((acc, curr) => {
-      if (!acc[curr.fuelType]) acc[curr.fuelType] = [];
-      acc[curr.fuelType].push(curr);
-      return acc;
-    }, {});
+    // Ensure all expected fields exist with default values
+    expectedSalesFields.forEach(field => {
+      if (!(field in sanitizedSales)) {
+        sanitizedSales[field] = 0;
+      }
+    });
 
-    const nozzleTestingMap = nozzleTesting.reduce((acc, entry) => {
-      acc[entry.fuelType] = parseFloat(entry.quantity || 0);
-      return acc;
-    }, {});
-
+    // Calculate fuel revenue with proper rounding
     let fuelRevenue = 0;
-    for (const [fuelType, entries] of Object.entries(groupedReadings)) {
-      const rate = parseFloat((parseFloat(dayRate[fuelType] || 0)).toFixed(2));
-      const totalVolume = entries.reduce((sum, r) =>
-        sum + (parseFloat(r.closing || 0) - parseFloat(r.opening || 0)), 0);
-      const netVolume = totalVolume - (nozzleTestingMap[fuelType] || 0);
-      fuelRevenue += parseFloat((netVolume * rate).toFixed(2));
+    for (const reading of readings) {
+      const { fuelType, opening, closing } = reading;
+      const rate = roundHalfUp(toSafeNumber(dayRate[fuelType] || 0), 2);
+      const netVolume = safeSubtract(closing, opening);
+      fuelRevenue = safeAdd(fuelRevenue, safeMultiply(netVolume, rate));
     }
 
-    const lubeRevenue = parseFloat(lubeSales.reduce(
-      (sum, l) => sum + parseFloat((parseFloat(l.amount || 0)).toFixed(2)), 0).toFixed(2));
-    const lost = parseFloat((parseFloat(sanitizedSales.lost || 0)).toFixed(2));
-    // TTS = Lube Sales + Fuel Revenue (Total Theoretical Sale)
-    const total = parseFloat((fuelRevenue + lubeRevenue).toFixed(2));
+    // Calculate lube revenue with proper rounding
+    const lubeRevenue = roundHalfUp(lubeSales.reduce(
+      (sum, l) => safeAdd(sum, toSafeNumber(l.amount || 0)), 0), 2);
 
-    const shiftDateParsed = Date.parse(date);
-    const shiftDate = isNaN(shiftDateParsed) ? new Date() : new Date(shiftDateParsed);
-    const shiftDateISO = shiftDate.toISOString().split("T")[0];
+    // Calculate credit back total with proper rounding
+    const creditBackTotal = roundHalfUp(creditBack.reduce(
+      (sum, p) => safeAdd(sum, toSafeNumber(p.amount || 0)), 0), 2);
 
-    console.log('💾 Creating shift document...');
-    const shiftDoc = await Shift.create({
-      user: req.user._id,
-      submittedByName,
-      timeType,
-      shiftDateSubmitted: shiftDate,
+    const lost = roundHalfUp(toSafeNumber(sanitizedSales.lost || 0), 2);
+
+    const total = roundHalfUp(safeAdd(safeAdd(fuelRevenue, lubeRevenue), creditBackTotal), 2);
+
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date();
+    const shiftDateISO = today.toISOString().split('T')[0];
+
+    // Prepare shift data with proper rounding
+    const shiftData = {
+      submittedByName: shift.submittedByName,
+      timeType: shift.timeType,
+      shiftDateSubmitted: new Date(),
       sales: sanitizedSales,
-      readings: readings.map(r => ({
-        ...r,
-        opening: parseFloat(r.opening || 0),
-        closing: parseFloat(r.closing || 0)
-      })),
+      readings: readings,
       dayRate: Object.fromEntries(
-        Object.entries(dayRate).map(([key, val]) => [key, parseFloat((parseFloat(val || 0)).toFixed(2))])
+        Object.entries(dayRate).map(([key, val]) => [key, roundHalfUp(toSafeNumber(val || 0), 2)])
       ),
       lubeSales: lubeSales.map(l => ({
-        ...l,
-        amount: parseFloat((parseFloat(l.amount || 0)).toFixed(2)),
-        quantity: parseFloat(l.quantity || 0)
+        description: l.description,
+        quantity: toSafeNumber(l.quantity || 0),
+        amount: roundHalfUp(toSafeNumber(l.amount || 0), 2),
       })),
-      nozzleTesting: nozzleTesting.map(f => ({
-        ...f,
-        quantity: parseFloat(f.quantity || 0)
+      nozzleTesting: nozzleTesting.map(nt => ({
+        fuelType: nt.fuelType,
+        quantity: toSafeNumber(nt.quantity || 0)
       })),
-      total
-    });
-    console.log('✅ Shift document created with ID:', shiftDoc._id);
+      user: req.user._id,
+      creditSales: [],
+      creditBack: []
+    };
 
-    const accountMap = {};
+    // Process credit sales with proper rounding
+    const creditSalePromises = creditSales.map(async (d) => {
+      const account = await DefPayAccount.findOne({ code: d.code });
+      if (!account) throw new Error(`Account with code ${d.code} not found.`);
 
-    for (const d of creditSales) {
-      if (!accountMap[d.code]) {
-        const found = await DefPayAccount.findOne({ code: d.code });
-        if (!found) {
-          return res.status(400).json({
-            error: `Credit Sale account with code "${d.code}" does not exist. Only admins can create new accounts.`
-          });
-        }
-        accountMap[d.code] = found;
-      }
-
-      const account = accountMap[d.code];
-      const amount = parseFloat((Number(d.amount || 0)).toFixed(2));
+      const amount = roundHalfUp(Number(d.amount || 0), 2);
       const fuelType = d.fuelType;
-      const rate = parseFloat((parseFloat(dayRate[fuelType] || 0)).toFixed(2));
-      const quantity = parseFloat(amount / rate);
+      const rate = roundHalfUp(toSafeNumber(dayRate[fuelType] || 0), 2);
+      const quantity = rate > 0 ? roundHalfUp(amount / rate, 2) : 0;
 
-      const creditSaleOrder = await DefPayOrder.create({
+      return {
         code: d.code,
+        actName: account.firstName + ' ' + account.lastName,
         type: 'creditSale',
-        actName: `${account.firstName} ${account.lastName}`,
-        amount,
-        quantity,
-        fuelType,
+        amount: amount,
         description: d.description || '',
-        submittedBy: req.user._id,
-        submittedByName,
         user: req.user._id,
-        shiftId: shiftDoc._id,
         defPayAccount: account._id,
-        dueDate: d.dueDate || getDefaultDueDate(),
-        orderDate: shiftDate,
-      });
+        submittedByName: shift.submittedByName,
+        orderDate: new Date(shiftDateISO),
+        dueDate: new Date(d.dueDate),
+        fuelType: fuelType,
+        quantity: quantity
+      };
+    });
 
-      shiftDoc.creditSales.push(creditSaleOrder._id);
-      shiftDoc.sales.creditSalesTotal = (shiftDoc.sales.creditSalesTotal || 0) + amount;
+    // Process credit backs
+    const creditBackPromises = creditBack.map(async (p) => {
+      const account = await DefPayAccount.findOne({ code: p.code });
+      if (!account) throw new Error(`Account with code ${p.code} not found.`);
 
-      account.balance -= amount;
-      account.paymentHistory.push({
-        amount: -amount,
-        date: new Date(),
-        defPayOrder: creditSaleOrder._id
-      });
+      return {
+        code: p.code,
+        actName: account.firstName + ' ' + account.lastName,
+        type: 'creditBack',
+        amount: roundHalfUp(Number(p.amount || 0), 2),
+        note: p.note || '',
+        user: req.user._id,
+        defPayAccount: account._id,
+        submittedByName: shift.submittedByName,
+        orderDate: new Date(shiftDateISO),
+        paymentType: p.paymentType
+      };
+    });
 
-      await account.save();
-    }
+    // Execute all operations in a transaction
+    const result = await withTransactionRetry(async (session) => {
+      // Create credit sales
+      const createdCreditSales = await Promise.all(creditSalePromises);
+      const creditSalesDocs = await DefPayOrder.insertMany(createdCreditSales, { session });
 
-    for (const p of creditBack) {
-      if (!accountMap[p.code]) {
-        const found = await DefPayAccount.findOne({ code: p.code });
-        if (!found) {
-          console.warn(`⚠️ Skipping payment: Account with code "${p.code}" not found.`);
-          continue;
-        }
-        accountMap[p.code] = found;
+      // Create credit backs
+      const createdCreditBacks = await Promise.all(creditBackPromises);
+      const creditBackDocs = await DefPayOrder.insertMany(createdCreditBacks, { session });
+
+      // Update shift data with order references
+      shiftData.creditSales = creditSalesDocs.map(doc => doc._id);
+      shiftData.creditBack = creditBackDocs.map(doc => doc._id);
+
+      // Calculate totals with proper rounding
+      shiftData.sales.creditSalesTotal = roundHalfUp(
+        creditSalesDocs.reduce((sum, doc) => safeAdd(sum, doc.amount), 0), 2);
+      shiftData.sales.creditBackTotal = roundHalfUp(
+        creditBackDocs.reduce((sum, doc) => safeAdd(sum, doc.amount), 0), 2);
+
+      // Create shift
+      const shiftDoc = new Shift(shiftData);
+      await shiftDoc.save({ session });
+
+      // Update order documents with shift reference
+      await DefPayOrder.updateMany(
+        { _id: { $in: [...creditSalesDocs.map(d => d._id), ...creditBackDocs.map(d => d._id)] } },
+        { $set: { shiftId: shiftDoc._id } },
+        { session }
+      );
+
+      // Update account balances
+      for (const creditSale of creditSalesDocs) {
+        await DefPayAccount.findByIdAndUpdate(
+          creditSale.defPayAccount,
+          {
+            $inc: { balance: creditSale.amount },
+            $push: {
+              paymentHistory: {
+                defPayOrder: creditSale._id,
+                amount: creditSale.amount,
+                type: 'debit',
+                date: new Date()
+              }
+            }
+          },
+          { session }
+        );
       }
 
-      const account = accountMap[p.code];
-      const paymentAmount = Number(p.amount || 0);
+      for (const creditBack of creditBackDocs) {
+        await DefPayAccount.findByIdAndUpdate(
+          creditBack.defPayAccount,
+          {
+            $inc: { balance: -creditBack.amount },
+            $push: {
+              paymentHistory: {
+                defPayOrder: creditBack._id,
+                amount: creditBack.amount,
+                type: 'credit',
+                date: new Date()
+              }
+            }
+          },
+          { session }
+        );
+      }
 
+      return shiftDoc;
+    });
 
-      const creditBackOrder = await DefPayOrder.create({
-        code: p.code,
-        actName: `${account.firstName} ${account.lastName}`,
-        type: 'creditBack',
-        amount: paymentAmount,
-        description: p.note || '',
-        submittedBy: req.user._id,
-        submittedByName,
-        user: req.user._id,
-        shiftId: shiftDoc._id,
-        defPayAccount: account._id,
-        paymentType: p.paymentType,
-        orderDate: shiftDate,
-      });
-
-      shiftDoc.creditBack.push(creditBackOrder._id);
-      shiftDoc.sales.creditBackTotal = (shiftDoc.sales.creditBackTotal || 0) + paymentAmount;
-
-      account.balance += paymentAmount;
-      account.paymentHistory.push({
-        amount: paymentAmount,
-        date: new Date(),
-        defPayOrder: creditBackOrder._id
-      });
-
-      await account.save();
-    }
-
-    console.log('🔄 Updating user readings...');
+    // Update user's readings outside transaction
     const userDoc = await User.findById(req.user._id);
     if (userDoc) {
       const updated = userDoc.readings || [];
       for (const reading of readings) {
         const idx = updated.findIndex(r => r.fuelType === reading.fuelType && r.nozzle === reading.nozzle);
         if (idx !== -1) {
-          updated[idx].closing = parseFloat(reading.closing || 0);
+          updated[idx].closing = roundHalfUp(reading.closing || 0, 2);
         } else {
           updated.push({
             fuelType: reading.fuelType,
             nozzle: reading.nozzle,
-            closing: parseFloat(reading.closing || 0)
+            closing: roundHalfUp(reading.closing || 0, 2)
           });
         }
       }
@@ -227,13 +259,13 @@ const submitShift = async (req, res) => {
           ]
         }
       },
-      { $set: { shiftId: shiftDoc._id } }
+      { $set: { shiftId: result._id } }
     );
 
     // Fetch those orders
     const linkedOrders = await DefPayOrder.find({
       user: req.user._id,
-      shiftId: shiftDoc._id,
+      shiftId: result._id,
       $expr: {
         $eq: [
           { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } },
@@ -246,33 +278,26 @@ const submitShift = async (req, res) => {
       const key = order.type === 'creditBack' ? 'creditBack' : 'creditSales';
       const salesKey = order.type === 'creditBack' ? 'creditBackTotal' : 'creditSalesTotal';
 
-      if (!shiftDoc[key].some(id => id.toString() === order._id.toString())) {
-        shiftDoc[key].push(order._id);
-        shiftDoc.sales[salesKey] = (shiftDoc.sales[salesKey] || 0) + order.amount;
+      if (!result[key].some(id => id.toString() === order._id.toString())) {
+        result[key].push(order._id);
+        result.sales[salesKey] = roundHalfUp(safeAdd(result.sales[salesKey] || 0, order.amount), 2);
       }
     }
 
-    await shiftDoc.save();
+    await result.save();
 
-    console.log(`🔗 Linked ${updatedOrders.modifiedCount} unlinked orders to shift ${shiftDoc._id}`);
+    console.log(`✅ Shift submitted successfully. Linked ${updatedOrders.modifiedCount} existing orders.`);
 
     res.status(201).json({
-      message: '✅ Shift and related credit sales/backs submitted successfully.',
-      shiftId: shiftDoc._id
+      message: 'Shift submitted successfully!',
+      shift: result,
+      linkedOrdersCount: updatedOrders.modifiedCount
     });
 
   } catch (error) {
     console.error('❌ Shift submission error:', error);
-    console.error('Error stack:', error.stack);
-    console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      userId: req.user?._id,
-      submittedByName,
-      timeType
-    });
     res.status(500).json({
-      error: 'Server error submitting shift.',
+      error: 'Failed to submit shift.',
       details: error.message
     });
   }
@@ -289,7 +314,35 @@ const updateShift = async (req, res) => {
       return res.status(404).json({ error: 'Shift not found.' });
     }
 
-    if (sales) shift.sales = sales;
+    // Sanitize sales data if provided
+    if (sales) {
+      const sanitizedSales = {};
+      const expectedSalesFields = [
+        'cashInHand', 'cashWithManager', 'qrTransfer', 'card', 'cheques',
+        'creditSalesTotal', 'creditBackTotal', 'lost'
+      ];
+
+      for (const [key, val] of Object.entries(sales)) {
+        const numVal = Number(val);
+        if (isNaN(numVal) || !isFinite(numVal)) {
+          sanitizedSales[key] = 0;
+        } else if (numVal < 0) {
+          return res.status(400).json({ error: `Sales values cannot be negative: ${key}` });
+        } else {
+          sanitizedSales[key] = roundHalfUp(numVal, 2);
+        }
+      }
+
+      // Ensure all expected fields exist with default values
+      expectedSalesFields.forEach(field => {
+        if (!(field in sanitizedSales)) {
+          sanitizedSales[field] = shift.sales[field] || 0;
+        }
+      });
+
+      shift.sales = sanitizedSales;
+    }
+
     if (readings) shift.readings = readings;
     if (dayRate) shift.dayRate = dayRate;
     if (req.body.lubeSales) shift.lubeSales = req.body.lubeSales;
@@ -320,13 +373,43 @@ const deleteShift = async (req, res) => {
       return res.status(404).json({ error: 'Associated user not found.' });
     }
 
+    // Find all associated orders before deleting them
+    const associatedOrders = await DefPayOrder.find({ shiftId: id });
+    console.log(`🔍 Found ${associatedOrders.length} associated orders to delete`);
+
+    // Delete associated orders and update account balances
+    for (const order of associatedOrders) {
+      // Update associated account balance
+      const account = await DefPayAccount.findById(order.defPayAccount);
+      if (account) {
+        // Revert the balance changes
+        if (order.type === 'creditBack') {
+          account.balance -= order.amount; // Customer had paid back, so reduce balance
+        } else if (order.type === 'creditSale') {
+          account.balance += order.amount; // Customer had credit, so increase balance
+        }
+
+        // Remove from payment history
+        account.paymentHistory = account.paymentHistory.filter(
+          entry => entry.defPayOrder.toString() !== order._id.toString()
+        );
+
+        await account.save();
+        console.log(`✅ Updated account ${order.defPayAccount} balance for order ${order._id}`);
+      }
+
+      // Delete the order
+      await DefPayOrder.findByIdAndDelete(order._id);
+      console.log(`✅ Deleted order ${order._id}`);
+    }
+
     // Subtract fuel usage from user's readings
     if (Array.isArray(shift.readings)) {
       for (const reading of shift.readings) {
         const { fuelType, opening, closing } = reading;
         const nozzle = reading.nozzle ?? null;
 
-        const change = parseFloat(closing) - parseFloat(opening);
+        const change = roundHalfUp(closing, 2) - roundHalfUp(opening, 2);
 
         const userReading = user.readings.find(
           r => r.fuelType === fuelType && (r.nozzle === nozzle || nozzle === null)
@@ -344,13 +427,9 @@ const deleteShift = async (req, res) => {
     // Delete the shift
     await Shift.findByIdAndDelete(id);
 
-    // Unlink any associated def/pay orders
-    await DefPayOrder.updateMany(
-      { shiftId: id },
-      { $unset: { shiftId: "" } }
-    );
-
-    res.status(200).json({ message: '✅ Shift deleted and user readings updated. Orders unlinked.' });
+    res.status(200).json({
+      message: `✅ Shift deleted successfully. ${associatedOrders.length} associated orders were also deleted and account balances updated.`
+    });
 
   } catch (error) {
     console.error('❌ Shift deletion error:', error);

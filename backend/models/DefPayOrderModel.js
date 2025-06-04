@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { roundHalfUp } = require('../utils/numberUtils');
 
 const defPayOrderSchema = new mongoose.Schema({
   code: {
@@ -69,7 +70,7 @@ const defPayOrderSchema = new mongoose.Schema({
   },
   paymentType: {
     type: String,
-    enum: ['QR', 'Cash', 'Card'],
+    enum: ['QR', 'Cash', 'Card', 'Cheques'],
     required: function () {
       return this.type === 'creditBack';
     }
@@ -84,8 +85,8 @@ const defPayOrderSchema = new mongoose.Schema({
     required: false,  // Optional for admin orders
     min: [0, 'Quantity cannot be negative'],
 
-    // 🔽 Setter: always store with exactly two decimals
-    set: v => (v == null ? v : Number(v.toFixed(2))),
+    // 🔽 Setter: always store with exactly two decimals using round half up
+    set: v => (v == null ? v : roundHalfUp(v, 2)),
 
     validate: {
       validator(v) {

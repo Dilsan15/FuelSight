@@ -11,6 +11,7 @@ const createDefPayOrder = async (req, res) => {
       type,
       amount,
       shiftDate,
+      shiftUserId,
       paymentType,
       fuelType,
       quantity,
@@ -34,16 +35,23 @@ const createDefPayOrder = async (req, res) => {
     let shift = null;
     let orderDate = new Date();
 
-    // For worker accounts, try to find an associated shift
+    // Try to find an associated shift using shiftUserId (for admin orders) or userId (for worker orders)
     if (shiftDate) {
-      const dateStart = new Date(shiftDate);
-      dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(shiftDate);
-      dateEnd.setHours(23, 59, 59, 999);
-      orderDate = new Date(shiftDate);
+      // Create date range for the specified date in UTC to avoid timezone issues
+      const targetDate = new Date(shiftDate + 'T00:00:00.000Z');
+      const dateStart = new Date(targetDate);
+      dateStart.setUTCHours(0, 0, 0, 0);
+      const dateEnd = new Date(targetDate);
+      dateEnd.setUTCHours(23, 59, 59, 999);
+
+      // Set orderDate to local date to avoid timezone display issues
+      orderDate = new Date(shiftDate + 'T12:00:00.000Z'); // Use noon UTC to avoid timezone edge cases
+
+      // Use shiftUserId if provided (for admin orders), otherwise use userId (for worker orders)
+      const userIdForShiftSearch = shiftUserId || userId;
 
       shift = await Shift.findOne({
-        user: userId,
+        user: userIdForShiftSearch,
         shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
       });
     }
@@ -52,9 +60,9 @@ const createDefPayOrder = async (req, res) => {
     if (!account) return res.status(404).json({ error: 'Account not found.' });
 
     if (type === 'creditSale') {
-      account.balance -= Number(amount);
+      account.balance -= Number(amount); // Credit sale makes balance negative (customer owes money)
     } else if (type === 'creditBack') {
-      account.balance += Number(amount);
+      account.balance += Number(amount); // Credit back makes balance positive (customer pays back)
     }
 
     account.paymentHistory.push({
@@ -114,6 +122,7 @@ const updateDefPayOrder = async (req, res) => {
     type,
     amount,
     shiftDate,
+    shiftUserId,
     paymentType,
     fuelType,
     quantity,
@@ -162,16 +171,48 @@ const updateDefPayOrder = async (req, res) => {
 
     // === Find associated shift based on user and shift date
     let newShift = null;
-    if (shiftDate && userId) {
-      const dateStart = new Date(shiftDate);
-      dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(shiftDate);
-      dateEnd.setHours(23, 59, 59, 999);
+    if (shiftDate && (shiftUserId || userId)) {
+      // Create date range for the specified date in UTC to avoid timezone issues
+      const targetDate = new Date(shiftDate + 'T00:00:00.000Z');
+      const dateStart = new Date(targetDate);
+      dateStart.setUTCHours(0, 0, 0, 0);
+      const dateEnd = new Date(targetDate);
+      dateEnd.setUTCHours(23, 59, 59, 999);
+
+      // Use shiftUserId if provided (for admin orders), otherwise use userId (for worker orders)
+      const userIdForShiftSearch = shiftUserId || userId;
+
+      console.log('🔍 SHIFT SEARCH DEBUG:');
+      console.log('- Original shiftDate:', shiftDate);
+      console.log('- Target date (UTC):', targetDate.toISOString());
+      console.log('- Date range start:', dateStart.toISOString());
+      console.log('- Date range end:', dateEnd.toISOString());
+      console.log('- User ID for shift search:', userIdForShiftSearch);
+      console.log('- Order owner User ID:', userId);
+
+      // First, let's see what shifts exist for this user
+      const allUserShifts = await Shift.find({ user: userIdForShiftSearch }).sort({ shiftDateSubmitted: -1 }).limit(5);
+      console.log('- Recent shifts for this user:');
+      allUserShifts.forEach((shift, i) => {
+        console.log(`  ${i + 1}. Shift ID: ${shift._id}, Date: ${shift.shiftDateSubmitted.toISOString()}`);
+      });
 
       newShift = await Shift.findOne({
-        user: userId,
+        user: userIdForShiftSearch,
         shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
       });
+
+      console.log('- Shift found:', newShift ? 'YES' : 'NO');
+      if (newShift) {
+        console.log('- Found shift ID:', newShift._id);
+        console.log('- Found shift date:', newShift.shiftDateSubmitted.toISOString());
+      } else {
+        console.log('- No shift found in the specified date range');
+        console.log('- This could mean:');
+        console.log('  1. No shift was submitted on this date');
+        console.log('  2. The shift was submitted by a different user');
+        console.log('  3. There is a timezone mismatch');
+      }
     }
 
     // === Calculate balance changes properly ===
@@ -179,8 +220,8 @@ const updateDefPayOrder = async (req, res) => {
 
     if (isSameAccount) {
       // SAME ACCOUNT: Calculate the net change
-      const oldEffect = oldType === 'creditBack' ? oldAmount : -oldAmount;
-      const newEffect = newType === 'creditBack' ? newAmount : -newAmount;
+      const oldEffect = oldType === 'creditBack' ? oldAmount : -oldAmount; // creditBack positive, creditSale negative
+      const newEffect = newType === 'creditBack' ? newAmount : -newAmount; // creditBack positive, creditSale negative
       const netChange = newEffect - oldEffect;
 
       oldAccount.balance += netChange;
@@ -204,9 +245,9 @@ const updateDefPayOrder = async (req, res) => {
       if (oldAccountExists) {
         // Revert old account balance (only if old account still exists)
         if (oldType === 'creditBack') {
-          oldAccount.balance -= oldAmount; // Revert: customer had paid back, so reduce balance
+          oldAccount.balance -= oldAmount; // Revert: customer had paid back, so reduce balance (undo the increase)
         } else if (oldType === 'creditSale') {
-          oldAccount.balance += oldAmount; // Revert: customer had credit, so increase balance
+          oldAccount.balance += oldAmount; // Revert: customer had credit, so increase balance (undo the decrease)
         }
 
         // Remove from old account payment history
@@ -222,9 +263,9 @@ const updateDefPayOrder = async (req, res) => {
 
       // Apply new account balance
       if (newType === 'creditBack') {
-        newAccount.balance += newAmount;  // Customer paying back debt
+        newAccount.balance += newAmount;  // Customer paying back (positive balance)
       } else if (newType === 'creditSale') {
-        newAccount.balance -= newAmount;  // Customer getting more credit
+        newAccount.balance -= newAmount;  // Customer getting credit (negative balance)
       }
 
       // Add to new account payment history
@@ -309,17 +350,31 @@ const updateDefPayOrder = async (req, res) => {
       if (newShift) {
         const newKey = newType === 'creditBack' ? 'creditBack' : 'creditSales';
 
+        console.log(`🔍 ADDING ORDER TO NEW SHIFT:`);
+        console.log(`- Order ID: ${id}`);
+        console.log(`- Shift ID: ${newShift._id}`);
+        console.log(`- Order type: ${newType}`);
+        console.log(`- Array key: ${newKey}`);
+        console.log(`- Current array:`, newShift[newKey]);
+
         // Add order to new shift's array (if not already there)
         if (!newShift[newKey].includes(id)) {
           newShift[newKey].push(id);
+          console.log(`✅ Added order ${id} to shift array`);
+        } else {
+          console.log(`⚠️ Order ${id} already in shift array`);
         }
 
         // Add new amount to totals
         if (!newShift.sales) newShift.sales = {};
         newShift.sales[salesKeyNew] = (newShift.sales[salesKeyNew] || 0) + newAmount;
 
+        console.log(`- Updated sales totals:`, newShift.sales);
+
         await newShift.save();
-        console.log(`✅ Added order ${id} to new shift ${newShiftId}`);
+        console.log(`✅ Added order ${id} to new shift ${newShift._id}`);
+      } else {
+        console.log(`❌ No shift found to link order to`);
       }
     }
 
@@ -329,28 +384,49 @@ const updateDefPayOrder = async (req, res) => {
       defPayAccount: accountId,
       type: newType,
       amount: newAmount,
-      shiftId: newShift?._id || existingOrder.shiftId, // Keep existing shiftId if no new shift found
+      shiftId: newShift?._id || null, // Set to null if no shift found for the new date
       submittedByName,
       description,
-      orderDate: shiftDate ? new Date(shiftDate) : existingOrder.orderDate,
+      orderDate: shiftDate ? new Date(shiftDate + 'T12:00:00.000Z') : existingOrder.orderDate, // Use noon UTC to avoid timezone issues
       // Update account-related fields with fresh data
       code: newAccount.code,
       actName: `${newAccount.firstName} ${newAccount.lastName}`,
       paymentType: newType === 'creditBack' ? paymentType : undefined,
       fuelType: newType === 'creditSale' ? fuelType : undefined,
       quantity: newType === 'creditSale' ? quantity : undefined,
-      dueDate: newType === 'creditSale' ? dueDate : undefined
+      dueDate: newType === 'creditSale' && dueDate ? new Date(dueDate + 'T12:00:00.000Z') : undefined // Also fix dueDate
     };
+
+    console.log('🔍 FINAL UPDATE PAYLOAD:');
+    console.log('- Old shiftId:', existingOrder.shiftId);
+    console.log('- New shiftId:', updatePayload.shiftId);
+    console.log('- New shift found:', newShift ? 'YES' : 'NO');
 
     const updatedOrder = await DefPayOrder.findByIdAndUpdate(id, updatePayload, {
       new: true,
       runValidators: true
     });
 
+    if (!updatedOrder) {
+      console.log('❌ Order update returned null - order may not exist');
+      return res.status(404).json({ error: 'Order not found after update.' });
+    }
+
     console.log(`✅ Order ${id} updated successfully`);
     res.status(200).json(updatedOrder);
   } catch (err) {
     console.error('Update error:', err);
+    console.error('Update payload was:', JSON.stringify(updatePayload, null, 2));
+
+    // Check for validation errors
+    if (err.name === 'ValidationError') {
+      const validationErrors = Object.values(err.errors).map(e => e.message);
+      console.error('Validation errors:', validationErrors);
+      return res.status(400).json({
+        error: 'Validation failed: ' + validationErrors.join(', ')
+      });
+    }
+
     res.status(500).json({ error: 'Failed to update order.' });
   }
 };
@@ -389,9 +465,9 @@ const deleteDefPayOrder = async (req, res) => {
     if (account) {
       // Revert the balance changes
       if (order.type === 'creditBack') {
-        account.balance -= order.amount; // Customer had paid back, so reduce balance
+        account.balance -= order.amount; // Customer had paid back, so reduce balance (undo the increase)
       } else if (order.type === 'creditSale') {
-        account.balance += order.amount; // Customer had credit, so increase balance
+        account.balance += order.amount; // Customer had credit, so increase balance (undo the decrease)
       }
 
       // Remove from payment history

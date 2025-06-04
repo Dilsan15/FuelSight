@@ -59,6 +59,7 @@ import { getSafeDecimal, formatCurrencyInput } from "@/utils/handleSafeInput.js"
 /* ──────────  Defaults  ────────── */
 const defaultState = {
   userId: "",
+  targetUserId: "", // For admin accounts to specify which user's shift to link to
   shiftDate: new Date().toISOString().split("T")[0],
   fuelType: "",
   type: "creditSale",
@@ -83,7 +84,7 @@ export default function AdminCreateOrderForm() {
   const { users, isLoading: usersLoading } = useUsers();
   const { fetchAccounts } = useDefPayActs();
   const { createOrder } = useCreateDefPayOrder();
-  const { updateOrder } = useUpdateDefPayOrder();
+  const { updateOrder, error: updateError } = useUpdateDefPayOrder();
   const { order, fetchOrder } = useDefPayOrder();
   const { dayRates } = useDayRates(); // 🆕
 
@@ -129,6 +130,8 @@ export default function AdminCreateOrderForm() {
   useEffect(() => {
     if (!isEditMode || !order) return;
 
+    const orderUser = users.find((u) => u._id === order.user?._id);
+    
     setForm((prev) => ({
       ...prev,
       userId: order.user?._id || "",
@@ -138,15 +141,18 @@ export default function AdminCreateOrderForm() {
       fuelType: order.fuelType || "",
       paymentType: order.paymentType || "",
       dueDate: order.dueDate?.split("T")[0] || "",
-      shiftDate: order.shiftDate?.split("T")[0] || prev.shiftDate,
+      // Only set shift date for worker accounts
+      shiftDate: orderUser?.role === "worker" ? (order.orderDate?.split("T")[0] || prev.shiftDate) : "",
       type: order.type || "creditSale",
       code: order.code || "",
       actName: order.actName || "",
       description: order.description || "",
+      // Clear targetUserId since admins cannot link to shifts anymore
+      targetUserId: "",
       // dayRate is filled in the unified effect below
     }));
     setShift(order.shiftId || null);
-    setPump(users.find((u) => u._id === order.user?._id) || null);
+    setPump(orderUser || null);
   }, [order, users, isEditMode]);
 
   /* ────────── 4. auto-fill DAY-RATE (only for workers) ────────── */
@@ -191,7 +197,7 @@ export default function AdminCreateOrderForm() {
     try {
       if (
         form.type === "creditBack" &&
-        !["QR", "Cash", "Card"].includes(form.paymentType)
+        !["QR", "Cash", "Card", "Cheques"].includes(form.paymentType)
       ) {
         alert("Select a valid payment type.");
         return;
@@ -199,6 +205,12 @@ export default function AdminCreateOrderForm() {
       // Validation
       if (!form.userId || !form.defPayAccount) {
         alert("Pump and account are required.");
+        return;
+      }
+      
+      // For worker accounts, shift date is required
+      if (selectedPump?.role === "worker" && !form.shiftDate) {
+        alert("Shift date is required when selecting a worker account.");
         return;
       }
       
@@ -238,8 +250,10 @@ export default function AdminCreateOrderForm() {
         amount: Number(form.amount || 0),
         submittedByName: user.username,
         description: form.description || "",
-        // Always include shift date for updates to find associated shift
-        shiftDate: form.shiftDate,
+        // Include shift date for worker accounts (required)
+        ...(selectedPump?.role === "worker" && {
+          shiftDate: form.shiftDate
+        }),
         // Credit sale fields
         ...(form.type === "creditSale" && {
           dueDate: form.dueDate,
@@ -256,7 +270,7 @@ export default function AdminCreateOrderForm() {
         // For create mode, also include these fields
         ...(!isEditMode && {
           defPayAccount: form.defPayAccount,
-          user: form.userId,
+          user: form.userId, // Always use the original userId for order ownership
           code: form.code,
           actName: form.actName
         })
@@ -270,11 +284,16 @@ export default function AdminCreateOrderForm() {
       if (result) {
         navigate("/admin-orders");
       } else {
-        alert("Failed to create order. Check console for details.");
+        // Get the specific error from the hook
+        const errorMsg = isEditMode ? 
+          (updateError || "Failed to update order. Check console for details.") :
+          "Failed to create order. Check console for details.";
+        alert(errorMsg);
       }
     } catch (err) {
       console.error("❌ Error submitting order:", err);
-      alert("Error submitting order");
+      const errorMsg = err.response?.data?.error || err.message || "Error submitting order";
+      alert(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -324,11 +343,13 @@ export default function AdminCreateOrderForm() {
                 if (users.find((u) => u._id === v)?.role === "admin") {
                   handleChange("dayRate", "");
                   handleChange("quantity", "");
-                  handleChange("shiftDate", "");
+                  handleChange("shiftDate", ""); // Clear shift date for admins - they cannot link to shifts
+                  handleChange("targetUserId", ""); // Clear target user
                   handleChange("fuelType", ""); // Clear fuel type for admin
                 } else {
                   // Reset fuel type when switching to worker (will be repopulated from their readings)
                   handleChange("fuelType", "");
+                  handleChange("targetUserId", ""); // Clear target user when selecting worker
                 }
               }}
             >
@@ -348,8 +369,8 @@ export default function AdminCreateOrderForm() {
             {selectedPump && (
               <div className="text-sm text-muted-foreground mt-1">
                 {selectedPump.role === "worker" 
-                  ? "Worker account: Will calculate fuel quantity, require fuel type and shift date"
-                  : "Admin account: Manual entry without fuel type, quantity or shift date"
+                  ? "Worker account: Will calculate fuel quantity and require fuel type. Shift date is required to link to their shift."
+                  : "Admin account: Manual entry without automatic fuel calculations. Cannot be linked to shifts."
                 }
               </div>
             )}
@@ -584,7 +605,7 @@ export default function AdminCreateOrderForm() {
                     <SelectValue placeholder="Select Payment Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {["QR", "Cash", "Card"].map((pt) => (
+                    {["QR", "Cash", "Card", "Cheques"].map((pt) => (
                       <SelectItem key={pt} value={pt}>
                         {pt}
                       </SelectItem>
@@ -598,13 +619,16 @@ export default function AdminCreateOrderForm() {
           {/* ────────── common fields ────────── */}
           {selectedPump?.role === "worker" && (
             <div>
-              <Label>Shift Date</Label>
+              <Label>Shift Date *</Label>
               <Input
                 type="date"
                 value={form.shiftDate}
                 onChange={(e) => handleChange("shiftDate", e.target.value)}
                 className="h-11"
               />
+              <div className="text-sm text-muted-foreground mt-1">
+                Required: Select the shift date to link this order to the worker's shift on that date.
+              </div>
             </div>
           )}
 

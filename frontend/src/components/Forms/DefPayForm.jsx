@@ -420,7 +420,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                         }
                         className="flex gap-6"
                       >
-                        {["QR", "Card"].map((method) => (
+                        {["QR", "Card", "Cash", "Cheques"].map((method) => (
                           <div
                             key={method}
                             className="flex items-center space-x-2"
@@ -496,7 +496,6 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
           >
             Add Credit Back
           </Button>
-     
         </div>
 
         <div className="pt-4 flex justify-between">

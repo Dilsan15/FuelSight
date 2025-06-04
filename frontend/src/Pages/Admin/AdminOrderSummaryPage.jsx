@@ -216,6 +216,20 @@ const AdminOrderSummaryPage = () => {
             <div className="space-y-2">
               <div>
                 <div className="text-sm font-medium text-muted-foreground">
+                  Shift Date
+                </div>
+                <div>{order.orderDate ? new Date(order.orderDate).toLocaleDateString() : 'N/A'}</div>
+              </div>
+              {order.user?.stationName && (
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground">
+                    DU
+                  </div>
+                  <div className="text-sm">{order.user.stationName}</div>
+                </div>
+              )}
+              <div>
+                <div className="text-sm font-medium text-muted-foreground">
                   Submitted By
                 </div>
                 <div>{order.submittedByName}</div>

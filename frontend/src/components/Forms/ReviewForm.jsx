@@ -45,8 +45,16 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
       )
       .toFixed(2)
   );
+  const creditBackTotal = parseFloat(
+    creditBack
+      .reduce(
+        (sum, p) => sum + parseFloat(parseFloat(p.amount || 0).toFixed(2)),
+        0
+      )
+      .toFixed(2)
+  );
   const lost = parseFloat(parseFloat(sales.lost || 0).toFixed(2));
-  const total = parseFloat((fuelRevenue + lubeRevenue - lost).toFixed(2));
+  const total = parseFloat((fuelRevenue + lubeRevenue + creditBackTotal - lost).toFixed(2));
 
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
@@ -182,78 +190,54 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
               <h3 className="text-2xl font-bold mb-6 text-gray-800">
                 Credit Sales
               </h3>
-              <div className="grid grid-cols-1 gap-6">
-                {creditSales.map((d, i) => (
-                  <div
-                    key={i}
-                    className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
-                  >
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Account
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
-                          {d.code}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Fuel Type
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
-                          {d.fuelType}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Amount
-                        </div>
-                        <div className="text-lg font-medium text-green-600 mt-1">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="text-left p-3 font-medium text-gray-600">Account</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Fuel Type</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Amount</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Quantity</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Rate</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Due Date</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditSales.map((d, i) => (
+                      <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="p-3">
+                          <span className="font-mono text-sm">{d.code}</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-medium">{d.fuelType}</span>
+                        </td>
+                        <td className="p-3 text-right font-medium text-green-600">
                           ₹{formatINR(d.amount)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Due Date
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
-                          {d.dueDate}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Litres
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
+                        </td>
+                        <td className="p-3 text-right font-medium">
                           {(
                             parseFloat(d.amount || 0) /
                             parseFloat(dayRate[d.fuelType] || 1)
-                          ).toFixed(2)}{" "}
-                          L
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Rate
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
+                          ).toFixed(2)} L
+                        </td>
+                        <td className="p-3 text-right">
                           ₹{formatINR(dayRate[d.fuelType] || 0)}/L
-                        </div>
-                      </div>
-                      {d.description && (
-                        <div className="col-span-2 md:col-span-4">
-                          <div className="text-sm font-medium text-gray-500">
-                            Description
-                          </div>
-                          <div className="text-base font-medium text-gray-700 mt-1">
-                            {d.description}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td className="p-3">
+                          <span className="text-sm">{d.dueDate}</span>
+                        </td>
+                        <td className="p-3">
+                          {d.description && (
+                            <span className="text-sm text-gray-600 max-w-32 truncate" title={d.description}>
+                              {d.description}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
           )}
@@ -264,50 +248,39 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
               <h3 className="text-2xl font-bold mb-6 text-gray-800">
                 Credit Backs
               </h3>
-              <div className="grid grid-cols-1 gap-6">
-                {creditBack.map((p, i) => (
-                  <div
-                    key={i}
-                    className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
-                  >
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Account
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
-                          {p.code}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Payment Type
-                        </div>
-                        <div className="text-lg font-medium text-gray-700 mt-1">
-                          {p.paymentType}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-500">
-                          Amount
-                        </div>
-                        <div className="text-lg font-medium text-green-600 mt-1">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="text-left p-3 font-medium text-gray-600">Account</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Payment Type</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Amount</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditBack.map((p, i) => (
+                      <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="p-3">
+                          <span className="font-mono text-sm">{p.code}</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-medium">{p.paymentType}</span>
+                        </td>
+                        <td className="p-3 text-right font-medium text-green-600">
                           ₹{formatINR(p.amount)}
-                        </div>
-                      </div>
-                      {p.note && (
-                        <div className="col-span-2 md:col-span-3">
-                          <div className="text-sm font-medium text-gray-500">
-                            Note
-                          </div>
-                          <div className="text-base font-medium text-gray-700 mt-1">
-                            {p.note}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td className="p-3">
+                          {p.note && (
+                            <span className="text-sm text-gray-600" title={p.note}>
+                              {p.note}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
           )}

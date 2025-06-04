@@ -80,7 +80,7 @@ const SalesForm = ({
               type="text"
               name="cashWithManager"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.cashWithManager ?? "")}
+              value={formatCurrencyInput(formData.sales?.cashWithManager ?? "0")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11"
@@ -95,7 +95,7 @@ const SalesForm = ({
               type="text"
               name="qrTransfer"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.qrTransfer ?? "")}
+              value={formatCurrencyInput(formData.sales?.qrTransfer ?? "0")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11"
@@ -110,7 +110,22 @@ const SalesForm = ({
               type="text"
               name="card"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.card ?? "")}
+              value={formatCurrencyInput(formData.sales?.card ?? "0")}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              className="bg-gray-50 border-gray-300 h-11"
+            />
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-sm font-semibold text-gray-700">
+              Cheques (₹) *
+            </Label>
+            <Input
+              type="text"
+              name="cheques"
+              inputMode="decimal"
+              value={formatCurrencyInput(formData.sales?.cheques ?? "0")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11"
@@ -125,7 +140,7 @@ const SalesForm = ({
               type="text"
               name="lost"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.lost ?? "")}
+              value={formatCurrencyInput(formData.sales?.lost ?? "0")}
               onChange={handleChange}
               onBlur={handleBlur}
               className="bg-gray-50 border-gray-300 h-11 border-red-200 focus:border-red-400 focus:ring-red-400"
@@ -140,7 +155,7 @@ const SalesForm = ({
             <Input
               type="text"
               readOnly
-              value={formatINR(formData.sales?.creditSalesTotal ?? "")}
+              value={formatINR(formData.sales?.creditSalesTotal ?? "0")}
               className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed h-11"
             />
           </div>
@@ -152,7 +167,7 @@ const SalesForm = ({
             <Input
               type="text"
               readOnly
-              value={formatINR(formData.sales?.creditBackTotal ?? "")}
+              value={formatINR(formData.sales?.creditBackTotal ?? "0")}
               className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed h-11"
             />
           </div>

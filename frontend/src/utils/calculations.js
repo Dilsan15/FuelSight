@@ -1,4 +1,4 @@
-import { toSafeNumber, safeAdd, safeSubtract, safeMultiply } from './numberUtils';
+import { roundHalfUp, toSafeNumber, safeAdd, safeSubtract, safeMultiply } from './numberUtils';
 
 /**
  * Calculate total fuel sold from readings
@@ -6,6 +6,19 @@ import { toSafeNumber, safeAdd, safeSubtract, safeMultiply } from './numberUtils
  * @returns {number} Total fuel sold
  */
 export const calculateTotalFuelSold = (readings) => {
+  return readings.reduce((sum, r) => {
+    const closing = toSafeNumber(r.closing);
+    const opening = toSafeNumber(r.opening);
+    return safeAdd(sum, safeSubtract(closing, opening));
+  }, 0);
+};
+
+/**
+ * Calculate total volume from readings
+ * @param {Array} readings - Array of reading objects with opening and closing values
+ * @returns {number} Total volume
+ */
+export const calculateTotalVolume = (readings) => {
   return readings.reduce((sum, r) => {
     const closing = toSafeNumber(r.closing);
     const opening = toSafeNumber(r.opening);
@@ -66,6 +79,7 @@ export const calculateTotalCredit = (transactions = []) => {
 export const calculateSalesBreakdown = (sales = {}) => {
   const qrTransfer = toSafeNumber(sales.qrTransfer);
   const card = toSafeNumber(sales.card);
+  const cheques = toSafeNumber(sales.cheques);
   const managerCash = toSafeNumber(sales.cashWithManager);
   const lost = toSafeNumber(sales.lost);
   const cashInHand = toSafeNumber(sales.cashInHand);
@@ -75,7 +89,7 @@ export const calculateSalesBreakdown = (sales = {}) => {
   const total = safeSubtract(
     safeAdd(
       safeAdd(qrTransfer, card),
-      safeAdd(managerCash, safeAdd(cashInHand, creditSalesTotal))
+      safeAdd(cheques, safeAdd(managerCash, safeAdd(cashInHand, creditSalesTotal)))
     ),
     safeAdd(creditBackTotal, lost)
   );
@@ -83,6 +97,7 @@ export const calculateSalesBreakdown = (sales = {}) => {
   return {
     qrTransfer,
     card,
+    cheques,
     managerCash,
     lost,
     cashInHand,
@@ -107,37 +122,42 @@ export const groupReadingsByFuelType = (readings = []) => {
 
 /**
  * Calculate Total Theoretical Sale (TTS)
- * TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
- * Credit sales are tracked separately as they are IOUs, not immediate cash.
+ * TTS = Fuel Revenue + Lube Sales + Credit Back (Total Theoretical Sale)
+ * Credit back represents money returned to customers, which increases the theoretical sale.
  * 
  * @param {number} fuelRevenue - Total fuel revenue (already adjusted for calibration)
  * @param {number} lubeRevenue - Total lube sales revenue
+ * @param {number} creditBack - Total credit back amount
  * @returns {number} Total Theoretical Sale amount
  */
-export const calculateTTS = (fuelRevenue, lubeRevenue = 0) => {
-  return safeAdd(toSafeNumber(fuelRevenue), toSafeNumber(lubeRevenue));
+export const calculateTTS = (fuelRevenue, lubeRevenue = 0, creditBack = 0) => {
+  return safeAdd(
+    safeAdd(toSafeNumber(fuelRevenue), toSafeNumber(lubeRevenue)),
+    toSafeNumber(creditBack)
+  );
 };
 
 /**
  * Calculate cash in hand based on TTS
- * Cash in Hand = TTS - (QR + Card + Manager Cash + Credit Sales + Lost)
+ * Cash in Hand = TTS - (QR + Card + Cheques + Manager Cash + Credit Sales + Lost)
  * Note: Credit sales are IOUs so they reduce the available cash
  * 
  * @param {number} tts - Total Theoretical Sale
  * @param {number} qrTransfer - QR transfer amount
  * @param {number} card - Card payment amount
+ * @param {number} cheques - Cheque payment amount
  * @param {number} managerCash - Cash with manager amount
  * @param {number} creditSales - Credit sales (IOUs)
  * @param {number} lost - Lost/stolen amount
  * @returns {number} Calculated cash in hand
  */
-export const calculateCashInHand = (tts, qrTransfer, card, managerCash, creditSales = 0, lost = 0) => {
+export const calculateCashInHand = (tts, qrTransfer, card, cheques = 0, managerCash, creditSales = 0, lost = 0) => {
   const paymentsAndDeductions = safeAdd(
     safeAdd(
       safeAdd(toSafeNumber(qrTransfer), toSafeNumber(card)),
-      safeAdd(toSafeNumber(managerCash), toSafeNumber(creditSales))
+      safeAdd(toSafeNumber(cheques), toSafeNumber(managerCash))
     ),
-    toSafeNumber(lost)
+    safeAdd(toSafeNumber(creditSales), toSafeNumber(lost))
   );
 
   return safeSubtract(toSafeNumber(tts), paymentsAndDeductions);

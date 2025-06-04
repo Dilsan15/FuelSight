@@ -3,13 +3,25 @@
  */
 
 /**
- * Safely converts a value to a number with 2 decimal places
+ * Standard "round half up" rounding to specified decimal places
+ * This ensures .5 always rounds up (e.g., 123.455 → 123.46)
+ * @param {number} num - The number to round
+ * @param {number} decimals - Number of decimal places (default: 2)
+ * @returns {number} - The rounded number
+ */
+export const roundHalfUp = (num, decimals = 2) => {
+    const factor = Math.pow(10, decimals);
+    return Math.round((num + Number.EPSILON) * factor) / factor;
+};
+
+/**
+ * Safely converts a value to a number with 2 decimal places using round half up
  * @param {string|number} value - The value to convert
  * @returns {number} - The converted number
  */
 export const toSafeNumber = (value) => {
     const num = Number(value || 0);
-    return isNaN(num) ? 0 : parseFloat(num.toFixed(2));
+    return isNaN(num) ? 0 : roundHalfUp(num, 2);
 };
 
 /**
@@ -39,37 +51,37 @@ export const toCalculationNumber = (value) => {
  */
 export const toDisplayString = (value, decimals = 2) => {
     const num = toSafeNumber(value);
-    return num.toFixed(decimals);
+    return roundHalfUp(num, decimals).toFixed(decimals);
 };
 
 /**
- * Safely adds two numbers
- * @param {string|number} a - First number
- * @param {string|number} b - Second number
- * @returns {number} - The sum
+ * Safely adds two numbers with proper rounding
+ * @param {number} a - First number
+ * @param {number} b - Second number
+ * @returns {number} - The sum rounded to 2 decimal places
  */
 export const safeAdd = (a, b) => {
-    return toSafeNumber(toSafeNumber(a) + toSafeNumber(b));
+    return roundHalfUp(toSafeNumber(a) + toSafeNumber(b), 2);
 };
 
 /**
- * Safely subtracts two numbers
- * @param {string|number} a - First number
- * @param {string|number} b - Second number
- * @returns {number} - The difference
+ * Safely subtracts two numbers with proper rounding
+ * @param {number} a - First number
+ * @param {number} b - Second number
+ * @returns {number} - The difference rounded to 2 decimal places
  */
 export const safeSubtract = (a, b) => {
-    return toSafeNumber(toSafeNumber(a) - toSafeNumber(b));
+    return roundHalfUp(toSafeNumber(a) - toSafeNumber(b), 2);
 };
 
 /**
- * Safely multiplies two numbers
- * @param {string|number} a - First number
- * @param {string|number} b - Second number
- * @returns {number} - The product
+ * Safely multiplies two numbers with proper rounding
+ * @param {number} a - First number
+ * @param {number} b - Second number
+ * @returns {number} - The product rounded to 2 decimal places
  */
 export const safeMultiply = (a, b) => {
-    return toSafeNumber(toSafeNumber(a) * toSafeNumber(b));
+    return roundHalfUp(toSafeNumber(a) * toSafeNumber(b), 2);
 };
 
 /**

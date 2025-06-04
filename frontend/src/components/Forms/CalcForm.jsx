@@ -117,15 +117,16 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
 
   const qrTransfer = parseFloat(sales.qrTransfer || 0);
   const card = parseFloat(sales.card || 0);
+  const cheques = parseFloat(sales.cheques || 0);
   const managerCash = parseFloat(sales.cashWithManager || 0);
   const lost = parseFloat(sales.lost || 0);
 
-  // TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
+  // TTS = Fuel Revenue + Lube Sales + Credit Back (Total Theoretical Sale)
   // Note: totalFuelRevenue already accounts for calibration cost reduction
-  const TTS = totalFuelRevenue + totalLubeSales;
+  const TTS = totalFuelRevenue + totalLubeSales + totalCreditBack;
   
-  // Cash in Hand = TTS - (QR + Card + Manager Cash + Credit Sales + Lost)
-  const selfReported = qrTransfer + card + managerCash + totalCreditSales + lost;
+  // Cash in Hand = TTS - (QR + Card + Cheques + Manager Cash + Credit Sales + Lost)
+  const selfReported = qrTransfer + card + cheques + managerCash + totalCreditSales + lost;
   const cashInHand = TTS - selfReported;
 
   const handleFinalSubmit = async () => {
@@ -247,13 +248,13 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
           </h3>
           <div className="mt-6">
             <div className="text-base font-medium text-blue-600">
-              Fuel Revenue + Lube Sales (Cash Potential)
+              Fuel Revenue + Lube Sales + Credit Back (Cash Potential)
             </div>
             <div className="text-3xl font-bold text-blue-600 mt-2">
               ₹{formatINR(TTS.toFixed(2))}
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              (₹{formatINR(totalFuelRevenue.toFixed(2))} + ₹{formatINR(totalLubeSales.toFixed(2))})
+              (₹{formatINR(totalFuelRevenue.toFixed(2))} + ₹{formatINR(totalLubeSales.toFixed(2))} + ₹{formatINR(totalCreditBack.toFixed(2))})
             </div>
           </div>
         </section>
@@ -286,6 +287,14 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
               </div>
               <div className="text-xl font-medium text-gray-800 mt-2">
                 ₹{formatINR(card.toFixed(2))}
+              </div>
+            </div>
+            <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+              <div className="text-base font-medium text-gray-600">
+                Cheques
+              </div>
+              <div className="text-xl font-medium text-gray-800 mt-2">
+                ₹{formatINR(cheques.toFixed(2))}
               </div>
             </div>
             <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
@@ -330,7 +339,7 @@ const CalcForm = ({ formData, setFormData, onBack, onNext }) => {
               ₹{formatINR(cashInHand.toFixed(2))}
             </div>
             <div className="text-sm text-gray-500 mt-3">
-              (TTS − QR − Card − Cash with Manager − Credit Sales − Lost)
+              (TTS − QR − Card − Cheques − Cash with Manager − Credit Sales − Lost)
             </div>
           </div>
         </section>

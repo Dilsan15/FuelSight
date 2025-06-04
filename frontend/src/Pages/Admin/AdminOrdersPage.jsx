@@ -168,7 +168,7 @@ const AdminOrdersPage = () => {
           <SelectValue placeholder="Payment Type" />
         </SelectTrigger>
         <SelectContent>
-          {["All", "QR", "Card", "Cash"].map((v) => (
+          {["All", "QR", "Card", "Cash", "Cheques"].map((v) => (
             <SelectItem key={v} value={v}>
               {v}
             </SelectItem>
@@ -197,10 +197,10 @@ const AdminOrdersPage = () => {
               <TableRow>
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
+                <TableHead>Shift Date</TableHead>
                 {type === "creditSale" ? (
                   <>
                     <TableHead>Fuel</TableHead>
-
                     <TableHead>Amount</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Station</TableHead>
@@ -219,7 +219,7 @@ const AdminOrdersPage = () => {
               {loading && showSkeletons
                 ? [...Array(5)].map((_, i) => (
                     <TableRow key={`sk-${type}-${i}`}>
-                      {[...Array(type === "creditSale" ? 9 : 6)].map((_, j) => (
+                      {[...Array(type === "creditSale" ? 11 : 8)].map((_, j) => (
                         <TableCell key={j}>
                           <Skeleton className="h-4 w-full" />
                         </TableCell>
@@ -236,6 +236,9 @@ const AdminOrdersPage = () => {
                         <span className="font-mono">{order.code}</span>
                       </TableCell>
                       <TableCell>{order.actName}</TableCell>
+                      <TableCell>
+                        {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "N/A"}
+                      </TableCell>
                       {type === "creditSale" ? (
                         <>
                           <TableCell>

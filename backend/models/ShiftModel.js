@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { roundHalfUp } = require('../utils/numberUtils');
 
 const shiftSchema = new mongoose.Schema({
   user: {
@@ -9,7 +10,8 @@ const shiftSchema = new mongoose.Schema({
 
   submittedByName: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
 
   timeType: {
@@ -20,6 +22,8 @@ const shiftSchema = new mongoose.Schema({
 
   shiftDateSubmitted: {
     type: Date,
+    required: true,
+    default: Date.now
   },
 
   sales: {
@@ -27,16 +31,29 @@ const shiftSchema = new mongoose.Schema({
     cashWithManager: { type: Number, default: 0 },
     qrTransfer: { type: Number, default: 0 },
     card: { type: Number, default: 0 },
+    cheques: { type: Number, default: 0 },
     creditSalesTotal: { type: Number, default: 0 },
     creditBackTotal: { type: Number, default: 0 },
-    lost: {type: Number, default: 0}
+    lost: { type: Number, default: 0 }
   },
 
   lubeSales: [
     {
-      description: { type: String, required: true },
-      amount: { type: Number, required: true },
-      quantity: { type: Number, default: 0 },
+      description: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      quantity: {
+        type: Number,
+        required: true,
+        min: 0
+      },
+      amount: {
+        type: Number,
+        required: true,
+        min: 0
+      }
     }
   ],
 
@@ -44,10 +61,15 @@ const shiftSchema = new mongoose.Schema({
     {
       fuelType: {
         type: String,
-        enum: ['XG', 'HSD', 'MS'],
+        enum: ['HSD', 'MS', 'XG'],
         required: true
       },
-      quantity: { type: Number, required: true }
+      quantity: {
+        type: Number,
+        required: true,
+        min: 0,
+        default: 0
+      }
     }
   ],
 
@@ -55,22 +77,37 @@ const shiftSchema = new mongoose.Schema({
     {
       fuelType: {
         type: String,
-        enum: ['XG', 'HSD', 'MS'],
+        enum: ['HSD', 'MS', 'XG'],
         required: true
       },
       nozzle: {
         type: Number,
-        required: true
+        required: true,
+        min: 1
       },
-      opening: { type: Number, required: true },
-      closing: { type: Number, required: true }
+      opening: {
+        type: Number,
+        required: true,
+        min: 0
+      },
+      closing: {
+        type: Number,
+        required: true,
+        min: 0,
+        validate: {
+          validator: function (v) {
+            return v >= this.opening;
+          },
+          message: 'Closing reading must be greater than or equal to opening reading'
+        }
+      }
     }
   ],
 
   dayRate: {
-    XG: { type: Number},
-    HSD: { type: Number},
-    MS: { type: Number }
+    HSD: { type: Number, required: true, min: 0 },
+    MS: { type: Number, required: true, min: 0 },
+    XG: { type: Number, required: true, min: 0 }
   },
 
   creditSales: [
@@ -89,13 +126,13 @@ const shiftSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
-// Add pre-save middleware to round numbers to 2 decimal places
-shiftSchema.pre('save', function(next) {
+// Add pre-save middleware to round numbers to 2 decimal places using round half up
+shiftSchema.pre('save', function (next) {
   // Round sales numbers (monetary values only)
   if (this.sales) {
     Object.keys(this.sales).forEach(key => {
       if (typeof this.sales[key] === 'number') {
-        this.sales[key] = parseFloat(this.sales[key].toFixed(2));
+        this.sales[key] = roundHalfUp(this.sales[key], 2);
       }
     });
   }
@@ -104,7 +141,7 @@ shiftSchema.pre('save', function(next) {
   if (this.lubeSales) {
     this.lubeSales.forEach(lube => {
       if (typeof lube.amount === 'number') {
-        lube.amount = parseFloat(lube.amount.toFixed(2));
+        lube.amount = roundHalfUp(lube.amount, 2);
       }
     });
   }
@@ -113,7 +150,7 @@ shiftSchema.pre('save', function(next) {
   if (this.dayRate) {
     Object.keys(this.dayRate).forEach(key => {
       if (typeof this.dayRate[key] === 'number') {
-        this.dayRate[key] = parseFloat(this.dayRate[key].toFixed(2));
+        this.dayRate[key] = roundHalfUp(this.dayRate[key], 2);
       }
     });
   }

@@ -214,10 +214,26 @@ const AdminEditShiftPage = () => {
               "creditBackTotal",
             ];
             const isTotals = lockedKeys.includes(key);
+            
+            // Format field labels for better display
+            const formatLabel = (key) => {
+              const labelMap = {
+                'cashInHand': 'Cash in Hand',
+                'cashWithManager': 'Cash with Manager',
+                'qrTransfer': 'QR Transfer',
+                'card': 'Card',
+                'cheques': 'Cheques',
+                'creditSalesTotal': 'Credit Sales Total',
+                'creditBackTotal': 'Credit Back Total',
+                'lost': 'Lost/Stolen'
+              };
+              return labelMap[key] || key.replace(/([A-Z])/g, " $1").trim();
+            };
+            
             return (
               <div key={key} className="space-y-2">
-                <Label className="text-sm font-medium capitalize">
-                  {key.replace(/([A-Z])/g, " $1").trim()}
+                <Label className="text-sm font-medium">
+                  {formatLabel(key)}
                 </Label>
                 <Input
                   type="number"

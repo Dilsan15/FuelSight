@@ -14,6 +14,7 @@ import { useDeleteShift } from "@/Hooks/ShiftHooks/useDeleteShift";
 import { useNavigate } from "react-router-dom";
 import { formatINR } from "@/utils/formatting";
 import { Badge } from "@/components/ui/badge";
+import { printDailySummary } from "@/utils/printUtils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -199,6 +200,10 @@ const AdminShiftsPage = () => {
               (tot, sh) => tot + (+sh.sales?.card || 0),
               0
             );
+            const dailyCheques = shiftsOnDate.reduce(
+              (tot, sh) => tot + (+sh.sales?.cheques || 0),
+              0
+            );
             const dailyManagerCash = shiftsOnDate.reduce(
               (tot, sh) => tot + (+sh.sales?.cashWithManager || 0),
               0
@@ -239,11 +244,11 @@ const AdminShiftsPage = () => {
 
             // Note: dailyTotalCash calculated below using theoretical cash in hand
 
-            // TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
-            const dailyTTS = dailyFuelRevenue + dailyLube;
+            // TTS = Fuel Revenue + Lube Sales + Credit Back (Total Theoretical Sale)
+            const dailyTTS = dailyFuelRevenue + dailyLube + dailyCreditBackAmt;
             
-            // Calculate theoretical cash in hand: TTS - QR - Card - Manager Cash - Credit Sales - Lost
-            const dailyCalculatedCashInHand = dailyTTS - dailyQR - dailyCard - dailyManagerCash - dailyCreditAmt - dailyLost;
+            // Calculate theoretical cash in hand: TTS - QR - Card - Cheques - Manager Cash - Credit Sales - Lost
+            const dailyCalculatedCashInHand = dailyTTS - dailyQR - dailyCard - dailyCheques - dailyManagerCash - dailyCreditAmt - dailyLost;
             
             // Calculate total cash: Manager Cash + Cash in Hand
             const dailyTotalCash = dailyManagerCash + dailyCalculatedCashInHand;
@@ -275,7 +280,35 @@ const AdminShiftsPage = () => {
                     {/* Daily Summary Card */}
                     <Card className="bg-white border shadow-sm rounded-xl">
                       <CardContent className="p-4">
-                        <h4 className="font-bold text-lg mb-4">Daily Summary</h4>
+                        <div className="flex justify-between items-center mb-4">
+                          <h4 className="font-bold text-lg">Daily Summary</h4>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              printDailySummary(date, shiftsOnDate);
+                            }}
+                            className="flex items-center gap-2"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <polyline points="6,9 6,2 18,2 18,9" />
+                              <path d="M6,18H4a2,2 0 0,1-2-2v-5a2,2 0 0,1,2-2H20a2,2 0 0,1,2,2v5a2,2 0 0,1-2,2H18" />
+                              <rect x="6" y="14" width="12" height="8" />
+                            </svg>
+                            Print
+                          </Button>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
                           {/* Primary Metrics */}
                           <div className="space-y-3">
@@ -306,6 +339,10 @@ const AdminShiftsPage = () => {
                             <div className="flex justify-between">
                               <span className="text-sm text-gray-600">Card</span>
                               <span className="text-lg font-semibold">{formatINR(dailyCard)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Cheques</span>
+                              <span className="text-lg font-semibold">{formatINR(dailyCheques)}</span>
                             </div>
                           </div>
                           
@@ -383,8 +420,8 @@ const AdminShiftsPage = () => {
                           0
                         ) || 0;
                         
-                        // TTS = Fuel Revenue + Lube Sales (Total Theoretical Sale)
-                        const shiftTTS = adjustedFuelRev + shiftLubeSales;
+                        // TTS = Fuel Revenue + Lube Sales + Credit Back (Total Theoretical Sale)
+                        const shiftTTS = adjustedFuelRev + shiftLubeSales + creditBackAmt;
 
                         const fuelSoldL = readings.reduce(
                           (s, r) => s + (r.closing - r.opening),
@@ -430,16 +467,16 @@ const AdminShiftsPage = () => {
                                 </p>
                               </div>
 
-                              {/* Fuel & Calibration */}
+                              {/* Cash Summary */}
                               <div>
                                 <p className="text-sm text-gray-600">
-                                  Fuel Sold
+                                  Cash Summary
                                 </p>
                                 <p className="font-medium">
-                                  {fuelSoldL.toFixed(2)} L
+                                  {formatINR(shiftTotalCash)}
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                  Calibration: {calibrationFuelL.toFixed(2)} L
+                                  Digital: {formatINR((Number(sales.qrTransfer || 0) + Number(sales.card || 0) + Number(sales.cheques || 0)))}
                                 </p>
                               </div>
 
@@ -467,7 +504,8 @@ const AdminShiftsPage = () => {
                                         Are you sure?
                                       </AlertDialogTitle>
                                       <AlertDialogDescription>
-                                        This will permanently delete the shift.
+                                        This will permanently delete the shift
+                                        and all associated orders. Account balances will be updated accordingly.
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
