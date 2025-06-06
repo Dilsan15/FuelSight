@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUsers } from "@/Hooks/AuthHooks/useUsers";
 import { useDeleteUser } from "@/Hooks/AuthHooks/useDeleteUser";
+import { useSynchronizeReadings } from "@/Hooks/ShiftHooks/useSynchronizeReadings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -30,6 +31,7 @@ const AdminUsersPage = () => {
   const [refreshToken, setRefreshToken] = useState(0);
   const { users, isLoading, error } = useUsers(refreshToken);
   const { deleteUser, isDeleting } = useDeleteUser();
+  const { syncReadings, isLoading: isSyncing } = useSynchronizeReadings();
   const navigate = useNavigate();
 
   const admins = users?.filter((u) => u.role === "admin") || [];
@@ -51,6 +53,16 @@ const AdminUsersPage = () => {
   const handleDelete = async (id) => {
     const success = await deleteUser(id);
     if (success) setRefreshToken((prev) => prev + 1);
+  };
+
+  const handleSyncReadings = async (userId) => {
+    try {
+      await syncReadings(userId);
+      // Refresh the users list to show updated readings
+      setRefreshToken((prev) => prev + 1);
+    } catch (error) {
+      console.error('Failed to sync readings:', error);
+    }
   };
 
   const renderReadings = (readings) => {
@@ -82,6 +94,16 @@ const AdminUsersPage = () => {
         {isWorker && <TableCell>{renderReadings(user.readings)}</TableCell>}
         <TableCell className="text-right">
           <div className="flex justify-end gap-2">
+            {isWorker && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleSyncReadings(user._id)}
+                disabled={isSyncing}
+              >
+                {isSyncing ? "Syncing..." : "Sync Readings"}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

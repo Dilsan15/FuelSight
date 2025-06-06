@@ -9,6 +9,16 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useLogin } from "@/Hooks/AuthHooks/useLogin";
 import { useNavigate } from "react-router-dom";
 import { useAuthContext } from "@/Hooks/AuthHooks/useAuthContext";
@@ -18,12 +28,25 @@ export default function LoginForm() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const { login, isLoading, error } = useLogin();
+  const { login, isLoading, error, shiftWarning, clearWarning } = useLogin();
   const { user } = useAuthContext();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     await login(username, password);
+  };
+
+  const handleAdminOverride = async () => {
+    clearWarning();
+    await login(username, password, true); // Admin override
+  };
+
+  const formatTimeAgo = (hoursAgo) => {
+    if (hoursAgo < 1) {
+      const minutes = Math.round(hoursAgo * 60);
+      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    }
+    return `${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago`;
   };
 
   return (
@@ -98,6 +121,47 @@ export default function LoginForm() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Shift Warning Dialog */}
+      <AlertDialog open={!!shiftWarning} onOpenChange={() => clearWarning()}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <Icons.warning className="h-5 w-5" />
+              Recent Shift Detected
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <div className="text-sm">
+                {shiftWarning?.message}
+              </div>
+              {shiftWarning?.shiftDetails && (
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                  <div className="text-xs text-amber-800 space-y-1">
+                    <div><strong>Shift Type:</strong> {shiftWarning.shiftDetails.timeType}</div>
+                    <div><strong>Submitted:</strong> {formatTimeAgo(shiftWarning.shiftDetails.hoursAgo)}</div>
+                    <div><strong>Time:</strong> {new Date(shiftWarning.shiftDetails.submittedAt).toLocaleString()}</div>
+                  </div>
+                </div>
+              )}
+              <div className="text-xs text-gray-600">
+                <strong>Note:</strong> Logging in too soon after a shift may indicate a duplicate submission. 
+                Please verify with admin before proceeding.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={clearWarning} className="w-full sm:w-auto">
+              Cancel Login
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleAdminOverride}
+              className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700"
+            >
+              Admin Override - Proceed
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

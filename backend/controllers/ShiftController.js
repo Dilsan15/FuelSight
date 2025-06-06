@@ -9,6 +9,119 @@ const getDefaultDueDate = () => {
   return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
 };
 
+/**
+ * Utility function to ensure user readings are accurate and consistent
+ * @param {Object} userDoc - User document
+ * @param {Array} shiftReadings - Readings from the shift
+ * @param {string} operation - 'update' or 'revert'
+ */
+const updateUserReadings = async (userDoc, shiftReadings, operation = 'update') => {
+  if (!userDoc || !Array.isArray(shiftReadings)) {
+    console.log('❌ Invalid parameters for updateUserReadings');
+    return;
+  }
+
+  const updated = userDoc.readings || [];
+
+  for (const reading of shiftReadings) {
+    const { fuelType, nozzle, opening, closing } = reading;
+    const idx = updated.findIndex(r => r.fuelType === fuelType && r.nozzle === nozzle);
+
+    if (operation === 'update') {
+      // For normal updates, set closing to the shift's closing value
+      const newClosing = roundHalfUp(closing || 0, 2);
+
+      if (idx !== -1) {
+        updated[idx].closing = newClosing;
+      } else {
+        updated.push({
+          fuelType,
+          nozzle,
+          closing: newClosing
+        });
+      }
+    } else if (operation === 'revert') {
+      // For deletions, revert to the opening value
+      const revertedClosing = roundHalfUp(opening || 0, 2);
+
+      if (idx !== -1) {
+        updated[idx].closing = revertedClosing;
+      }
+    }
+  }
+
+  // Ensure all readings are properly rounded and non-negative
+  updated.forEach(reading => {
+    reading.closing = roundHalfUp(reading.closing || 0, 2);
+    if (reading.closing < 0) reading.closing = 0;
+  });
+
+  userDoc.readings = updated;
+  await userDoc.save();
+  console.log(`✅ User readings ${operation}d successfully with proper validation`);
+};
+
+/**
+ * Synchronizes user readings with their latest shift's closing readings
+ * @param {string} userId - User ID to synchronize
+ */
+const synchronizeUserReadings = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log('❌ User not found for synchronization');
+      return;
+    }
+
+    // Find the user's most recent shift, giving priority to night shifts
+    const latestShift = await Shift.findOne({ user: userId })
+      .sort({
+        shiftDateSubmitted: -1,  // Most recent date first
+        timeType: 1              // Night shifts get priority (Night comes after Day alphabetically)
+      })
+      .lean();
+
+    if (!latestShift || !latestShift.readings) {
+      console.log('❌ No shifts found for user or no readings in latest shift');
+      return;
+    }
+
+    console.log(`🔄 Synchronizing user readings with latest ${latestShift.timeType} shift from ${new Date(latestShift.shiftDateSubmitted).toLocaleDateString()}`);
+
+    // Update user readings to match the latest shift's closing readings
+    const updatedReadings = user.readings || [];
+
+    for (const shiftReading of latestShift.readings) {
+      const { fuelType, nozzle, closing } = shiftReading;
+      const idx = updatedReadings.findIndex(r => r.fuelType === fuelType && r.nozzle === nozzle);
+      const syncedClosing = roundHalfUp(closing || 0, 2);
+
+      if (idx !== -1) {
+        updatedReadings[idx].closing = syncedClosing;
+      } else {
+        updatedReadings.push({
+          fuelType,
+          nozzle,
+          closing: syncedClosing
+        });
+      }
+    }
+
+    // Ensure all readings are properly rounded and non-negative
+    updatedReadings.forEach(reading => {
+      reading.closing = roundHalfUp(reading.closing || 0, 2);
+      if (reading.closing < 0) reading.closing = 0;
+    });
+
+    user.readings = updatedReadings;
+    await user.save();
+    console.log(`✅ User readings synchronized with latest ${latestShift.timeType} shift successfully`);
+
+  } catch (error) {
+    console.error('❌ Error synchronizing user readings:', error);
+  }
+};
+
 // SUBMIT Shift
 const submitShift = async (req, res) => {
   const { shift, creditSales = [], creditBack = [] } = req.body;
@@ -20,6 +133,11 @@ const submitShift = async (req, res) => {
       return res.status(400).json({ error: 'Missing required shift data.' });
     }
 
+    // Validate shift date
+    if (!shift.date) {
+      return res.status(400).json({ error: 'Shift date is required.' });
+    }
+
     // Validate readings
     if (!Array.isArray(readings) || readings.length === 0) {
       return res.status(400).json({ error: 'At least one reading is required.' });
@@ -29,8 +147,22 @@ const submitShift = async (req, res) => {
       if (!reading.fuelType || reading.opening == null || reading.closing == null) {
         return res.status(400).json({ error: 'All readings must have fuelType, opening, and closing values.' });
       }
-      if (reading.closing < reading.opening) {
-        return res.status(400).json({ error: 'Closing reading cannot be less than opening reading.' });
+
+      // Ensure readings are valid numbers
+      const opening = Number(reading.opening);
+      const closing = Number(reading.closing);
+
+      if (isNaN(opening) || isNaN(closing) || opening < 0 || closing < 0) {
+        return res.status(400).json({ error: 'Opening and closing readings must be valid non-negative numbers.' });
+      }
+
+      if (closing < opening) {
+        return res.status(400).json({ error: `Closing reading (${closing}) cannot be less than opening reading (${opening}) for ${reading.fuelType} nozzle ${reading.nozzle}.` });
+      }
+
+      // Ensure nozzle is a valid number
+      if (reading.nozzle == null || isNaN(Number(reading.nozzle)) || Number(reading.nozzle) < 1) {
+        return res.status(400).json({ error: 'Nozzle number must be a valid positive integer.' });
       }
     }
 
@@ -80,15 +212,17 @@ const submitShift = async (req, res) => {
 
     const total = roundHalfUp(safeAdd(safeAdd(fuelRevenue, lubeRevenue), creditBackTotal), 2);
 
-    // Get today's date in YYYY-MM-DD format
-    const today = new Date();
-    const shiftDateISO = today.toISOString().split('T')[0];
+    // Use the shift date from the form instead of today's date
+    const shiftDateISO = shift.date; // This should be in YYYY-MM-DD format from the form
+
+    // Create a proper Date object for the shift date (set to noon UTC to avoid timezone issues)
+    const shiftDate = new Date(shiftDateISO + 'T12:00:00.000Z');
 
     // Prepare shift data with proper rounding
     const shiftData = {
       submittedByName: shift.submittedByName,
       timeType: shift.timeType,
-      shiftDateSubmitted: new Date(),
+      shiftDateSubmitted: shiftDate, // Use the specified shift date instead of current timestamp
       sales: sanitizedSales,
       readings: readings,
       dayRate: Object.fromEntries(
@@ -127,7 +261,7 @@ const submitShift = async (req, res) => {
         user: req.user._id,
         defPayAccount: account._id,
         submittedByName: shift.submittedByName,
-        orderDate: new Date(shiftDateISO),
+        orderDate: shiftDate, // Use the shift date object instead of creating new Date
         dueDate: new Date(d.dueDate),
         fuelType: fuelType,
         quantity: quantity
@@ -148,7 +282,7 @@ const submitShift = async (req, res) => {
         user: req.user._id,
         defPayAccount: account._id,
         submittedByName: shift.submittedByName,
-        orderDate: new Date(shiftDateISO),
+        orderDate: shiftDate, // Use the shift date object instead of creating new Date
         paymentType: p.paymentType
       };
     });
@@ -227,22 +361,10 @@ const submitShift = async (req, res) => {
     // Update user's readings outside transaction
     const userDoc = await User.findById(req.user._id);
     if (userDoc) {
-      const updated = userDoc.readings || [];
-      for (const reading of readings) {
-        const idx = updated.findIndex(r => r.fuelType === reading.fuelType && r.nozzle === reading.nozzle);
-        if (idx !== -1) {
-          updated[idx].closing = roundHalfUp(reading.closing || 0, 2);
-        } else {
-          updated.push({
-            fuelType: reading.fuelType,
-            nozzle: reading.nozzle,
-            closing: roundHalfUp(reading.closing || 0, 2)
-          });
-        }
-      }
-      userDoc.readings = updated;
-      await userDoc.save();
-      console.log('✅ User readings updated successfully');
+      await updateUserReadings(userDoc, readings, 'update');
+
+      // Double-check synchronization with latest shift to ensure accuracy
+      await synchronizeUserReadings(req.user._id);
     } else {
       console.log('❌ User document not found');
     }
@@ -314,6 +436,9 @@ const updateShift = async (req, res) => {
       return res.status(404).json({ error: 'Shift not found.' });
     }
 
+    // Store original readings for comparison
+    const originalReadings = shift.readings || [];
+
     // Sanitize sales data if provided
     if (sales) {
       const sanitizedSales = {};
@@ -349,6 +474,18 @@ const updateShift = async (req, res) => {
     if (req.body.nozzleTesting) shift.nozzleTesting = req.body.nozzleTesting;
 
     await shift.save();
+
+    // Update user readings if readings were modified
+    if (readings) {
+      const userDoc = await User.findById(shift.user);
+      if (userDoc) {
+        await updateUserReadings(userDoc, readings, 'update');
+
+        // Synchronize with latest shift to ensure accuracy
+        await synchronizeUserReadings(shift.user);
+      }
+    }
+
     res.status(200).json({ message: '✅ Shift updated successfully.', shift });
 
   } catch (error) {
@@ -403,23 +540,9 @@ const deleteShift = async (req, res) => {
       console.log(`✅ Deleted order ${order._id}`);
     }
 
-    // Subtract fuel usage from user's readings
+    // Revert fuel usage from user's readings
     if (Array.isArray(shift.readings)) {
-      for (const reading of shift.readings) {
-        const { fuelType, opening, closing } = reading;
-        const nozzle = reading.nozzle ?? null;
-
-        const change = roundHalfUp(closing, 2) - roundHalfUp(opening, 2);
-
-        const userReading = user.readings.find(
-          r => r.fuelType === fuelType && (r.nozzle === nozzle || nozzle === null)
-        );
-
-        if (userReading) {
-          userReading.closing -= change;
-          if (userReading.closing < 0) userReading.closing = 0; // Prevent negative
-        }
-      }
+      await updateUserReadings(user, shift.readings, 'revert');
     }
 
     await user.save();
@@ -496,10 +619,39 @@ const getShift = async (req, res) => {
   }
 };
 
+// SYNCHRONIZE User Readings
+const synchronizeReadings = async (req, res) => {
+  try {
+    const userId = req.params.userId || req.user._id;
+
+    // Verify user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Perform synchronization
+    await synchronizeUserReadings(userId);
+
+    // Fetch updated user to return current readings
+    const updatedUser = await User.findById(userId).select('readings');
+
+    res.status(200).json({
+      message: '✅ User readings synchronized successfully.',
+      readings: updatedUser.readings
+    });
+
+  } catch (error) {
+    console.error('❌ Error synchronizing readings:', error);
+    res.status(500).json({ error: 'Failed to synchronize readings.' });
+  }
+};
+
 module.exports = {
   submitShift,
   updateShift,
   deleteShift,
   getShifts,
-  getShift
+  getShift,
+  synchronizeReadings
 };

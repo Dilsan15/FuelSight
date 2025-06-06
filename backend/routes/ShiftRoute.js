@@ -6,7 +6,8 @@ const {
   updateShift,
   deleteShift,
   getShifts,
-  getShift
+  getShift,
+  synchronizeReadings
 } = require('../controllers/ShiftController');
 
 const requireAdmin = require('../middleware/RequireAdmin')
@@ -14,7 +15,8 @@ const requireAdmin = require('../middleware/RequireAdmin')
 router.use(requireAuth);
 
 router.post('/submit', submitShift);
-
+router.post('/synchronize-readings', synchronizeReadings); // For current user
+router.post('/synchronize-readings/:userId', synchronizeReadings); // For admin use with specific user
 
 router.use(requireAuth)
 router.use(requireAdmin)

@@ -10,6 +10,8 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { useSynchronizeReadings } from "@/Hooks/ShiftHooks/useSynchronizeReadings";
+import { useAuthContext } from "@/Hooks/AuthHooks/useAuthContext";
 
 import { formatINR } from "@/utils/formatting.js";
 import {
@@ -21,6 +23,9 @@ import {
 } from "@/utils/handleSafeInput.js";
 
 const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
+  const { syncReadings, syncSingleNozzle, isLoading: isSyncing, syncingNozzles } = useSynchronizeReadings();
+  const { user } = useAuthContext();
+  
   const fuelTypes = (formData.readings || [])
     .map((r) => r.fuelType)
     .filter((v, i, arr) => arr.indexOf(v) === i);
@@ -40,12 +45,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
     setFormData({ [name]: value });
   };
 
-  const deleteReading = (fuelType, nozzle) => {
-    const updated = formData.readings.filter(
-      (r) => !(r.fuelType === fuelType && r.nozzle === nozzle)
-    );
-    setFormData({ readings: updated });
-  };
+
 
   const handleReadingChange = (fuelType, nozzle, field, value) => {
     const updated = formData.readings.map((r) =>
@@ -56,24 +56,114 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
     setFormData({ readings: updated });
   };
 
-  const addReading = (fuelType) => {
-    const maxNozzle = Math.max(
-      0,
-      ...formData.readings
-        .filter((r) => r.fuelType === fuelType)
-        .map((r) => r.nozzle || 0)
-    );
-    const newNozzle = maxNozzle + 1;
-    const newReading = {
-      fuelType,
-      nozzle: newNozzle,
-      opening: "",
-      closing: "",
-    };
-    setFormData({
-      readings: [...(formData.readings || []), newReading],
-    });
+
+
+  const handleSyncReadings = async () => {
+    try {
+      const result = await syncReadings();
+      
+      if (result?.readings && result.readings.length > 0) {
+        // Check if these are actual previous readings or just placeholder/default readings
+        // If all readings have the same closing values (like 10, 10, 0), they're likely defaults
+        const hasValidPreviousReadings = result.readings.some(r => 
+          r.closing !== 10 && r.closing !== 0
+        );
+        
+        if (hasValidPreviousReadings) {
+          // Update the opening readings with the synced values
+          const updatedReadings = formData.readings.map(reading => {
+            const syncedReading = result.readings.find(
+              r => r.fuelType === reading.fuelType && r.nozzle === reading.nozzle
+            );
+            if (syncedReading) {
+              return {
+                ...reading,
+                opening: syncedReading.closing.toString()
+              };
+            }
+            return reading;
+          });
+          setFormData({ readings: updatedReadings });
+          console.log('✅ All readings synchronized successfully');
+        } else {
+          // These appear to be default/placeholder readings, default to 0
+          const updatedReadings = formData.readings.map(reading => ({
+            ...reading,
+            opening: "0"
+          }));
+          setFormData({ readings: updatedReadings });
+          console.log('ℹ️ Default readings detected, opening readings set to 0');
+        }
+      } else {
+        // No previous shifts found, default all opening readings to 0
+        const updatedReadings = formData.readings.map(reading => ({
+          ...reading,
+          opening: "0"
+        }));
+        setFormData({ readings: updatedReadings });
+        console.log('ℹ️ No previous shifts found, opening readings set to 0');
+      }
+    } catch (error) {
+      console.error('❌ Failed to sync readings:', error);
+      alert('Failed to sync readings. Please try again.');
+    }
   };
+
+  const handleSyncSingleNozzle = async (fuelType, nozzle) => {
+    try {
+      const result = await syncSingleNozzle(fuelType, nozzle);
+      if (result?.readings && result.readings.length > 0) {
+        const syncedReading = result.readings[0];
+        
+        // Check if this is a valid previous reading or just a placeholder/default
+        if (syncedReading.closing !== 10 && syncedReading.closing !== 0) {
+          // Update only the specific nozzle reading
+          const updatedReadings = formData.readings.map(reading => {
+            if (reading.fuelType === fuelType && reading.nozzle === nozzle) {
+              return {
+                ...reading,
+                opening: syncedReading.closing.toString()
+              };
+            }
+            return reading;
+          });
+          setFormData({ readings: updatedReadings });
+          console.log(`✅ ${fuelType} nozzle ${nozzle} synchronized successfully`);
+        } else {
+          // This appears to be a default/placeholder reading, default to 0
+          const updatedReadings = formData.readings.map(reading => {
+            if (reading.fuelType === fuelType && reading.nozzle === nozzle) {
+              return {
+                ...reading,
+                opening: "0"
+              };
+            }
+            return reading;
+          });
+          setFormData({ readings: updatedReadings });
+          console.log(`ℹ️ Default reading detected for ${fuelType} nozzle ${nozzle}, opening set to 0`);
+        }
+      } else {
+        // No previous reading found for this nozzle, default to 0
+        const updatedReadings = formData.readings.map(reading => {
+          if (reading.fuelType === fuelType && reading.nozzle === nozzle) {
+            return {
+              ...reading,
+              opening: "0"
+            };
+          }
+          return reading;
+        });
+        setFormData({ readings: updatedReadings });
+        console.log(`ℹ️ No previous reading found for ${fuelType} nozzle ${nozzle}, opening set to 0`);
+      }
+    } catch (error) {
+      console.error(`❌ Failed to sync ${fuelType} nozzle ${nozzle}:`, error);
+      alert(`Failed to sync ${fuelType} nozzle ${nozzle}. Please try again.`);
+    }
+  };
+
+
 
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
@@ -213,77 +303,114 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
 
         {/* Fuel Readings */}
         <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
-          <h3 className="text-2xl font-bold text-gray-900">Fuel Readings</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-2xl font-bold text-gray-900">Fuel Readings</h3>
+            <Button
+              variant="default"
+              onClick={handleSyncReadings}
+              disabled={isSyncing}
+              className="h-11 px-6 bg-blue-600 hover:bg-blue-700"
+            >
+              {isSyncing ? "Syncing..." : "Sync All Readings"}
+            </Button>
+          </div>
           {fuelTypes.map((fuel) => {
             const entries = (formData.readings || []).filter(
               (r) => r.fuelType === fuel
             );
             return (
               <div key={fuel} className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xl font-semibold text-gray-800">
-                    {fuel} Nozzles
-                  </h4>
-                  <Button
-                    variant="outline"
-                    onClick={() => addReading(fuel)}
-                    className="h-11 px-6"
-                  >
-                    Add {fuel} Nozzle
-                  </Button>
-                </div>
-                {entries.map(({ nozzle, opening, closing }) => (
-                  <div
-                    key={`${fuel}-nozzle-${nozzle}`}
-                    className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-gray-50 p-6 rounded-xl border border-gray-200"
-                  >
-                    <div className="space-y-3">
-                      <Label className="text-sm font-semibold text-gray-700">
-                        Opening - Nozzle {nozzle} (L)
-                      </Label>
-                      <Input
-                        type="number"
-                        value={opening}
-                        readOnly
-                        className="bg-gray-100 border-gray-300 text-gray-600 h-11"
-                      />
+                <h4 className="text-xl font-semibold text-gray-800 border-b border-gray-200 pb-2">
+                  {fuel} Nozzles
+                </h4>
+                {entries.map(({ nozzle, opening, closing }) => {
+                  const nozzleKey = `${fuel}-${nozzle}`;
+                  const isSyncingThisNozzle = syncingNozzles.has(nozzleKey);
+                  
+                  return (
+                    <div
+                      key={`${fuel}-nozzle-${nozzle}`}
+                      className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3"
+                    >
+                      {/* Header with nozzle name */}
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900 text-sm">
+                          Nozzle {nozzle}
+                        </span>
+                      </div>
+                      
+                      {/* Opening reading with sync button */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <Label className="text-xs text-gray-600 mb-1 block">
+                            Opening (L)
+                          </Label>
+                          <Input
+                            type="number"
+                            value={opening}
+                            readOnly
+                            className="bg-white border-gray-300 text-gray-700 h-9 text-sm"
+                          />
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSyncSingleNozzle(fuel, nozzle)}
+                          disabled={isSyncingThisNozzle || isSyncing}
+                          className="h-9 px-2 text-xs mt-5 min-w-[45px]"
+                        >
+                          {isSyncingThisNozzle ? "..." : "↻"}
+                        </Button>
+                      </div>
+                      
+                      {/* Closing and Volume in a row */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-gray-600 mb-1 block">
+                            Closing (L) *
+                          </Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="any"
+                            value={closing}
+                            onChange={(e) =>
+                              handleReadingChange(
+                                fuel,
+                                nozzle,
+                                "closing",
+                                getSafeDecimal(e.target.value)
+                              )
+                            }
+                            onBlur={(e) => {
+                              if (e.target.value === "") {
+                                handleReadingChange(fuel, nozzle, "closing", "0");
+                              }
+                            }}
+                            className="bg-white border-gray-300 h-9 text-sm"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label className="text-xs text-gray-600 mb-1 block">
+                            Volume (L)
+                          </Label>
+                          <Input
+                            type="number"
+                            value={(() => {
+                              const openingVal = Number(opening) || 0;
+                              const closingVal = Number(closing) || 0;
+                              const volumeSold = closingVal - openingVal;
+                              return volumeSold >= 0 ? volumeSold.toFixed(2) : "0.00";
+                            })()}
+                            readOnly
+                            className="bg-green-50 border-green-200 text-green-700 h-9 text-sm font-medium"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-3">
-                      <Label className="text-sm font-semibold text-gray-700">
-                        Closing (L) *
-                      </Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={closing}
-                        onChange={(e) =>
-                          handleReadingChange(
-                            fuel,
-                            nozzle,
-                            "closing",
-                            getSafeDecimal(e.target.value)
-                          )
-                        }
-                        onBlur={(e) => {
-                          if (e.target.value === "") {
-                            handleReadingChange(fuel, nozzle, "closing", "0");
-                          }
-                        }}
-                        className="bg-gray-50 border-gray-300 h-11"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <Button
-                        variant="destructive"
-                        onClick={() => deleteReading(fuel, nozzle)}
-                        className="h-11 px-6"
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })}
