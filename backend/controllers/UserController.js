@@ -56,37 +56,45 @@ const loginUser = async (req, res) => {
 
     // Check for recent shift submissions for petrol users (workers)
     if (user.role === 'worker' && !adminOverride) {
-      const tenHoursAgo = new Date(Date.now() - 10 * 60 * 60 * 1000); // 10 hours ago
-      console.log(`🔍 Checking for shifts after: ${tenHoursAgo.toISOString()}`);
+      // Check for shifts from today (based on shift work date, not submission date)
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      console.log(`🔍 Checking for shifts on date: ${todayStart.toISOString().split('T')[0]}`);
 
       const recentShift = await Shift.findOne({
         user: user._id,
-        shiftDateSubmitted: { $gte: tenHoursAgo }
-      }).sort({ shiftDateSubmitted: -1 });
+        date: {
+          $gte: todayStart,
+          $lt: todayEnd
+        }
+      }).sort({ date: -1 });
 
       console.log(`🔍 Recent shift found:`, recentShift ? {
         timeType: recentShift.timeType,
+        shiftDate: recentShift.date,
         submittedAt: recentShift.shiftDateSubmitted,
         userId: recentShift.user
       } : 'None');
 
       if (recentShift) {
-        const timeSinceShift = Math.round((Date.now() - new Date(recentShift.shiftDateSubmitted).getTime()) / (1000 * 60 * 60 * 10)) / 10; // Hours with 1 decimal
+        const shiftDateStr = recentShift.date.toISOString().split('T')[0];
 
-        console.log(`⚠️ Login blocked for ${user.username}: Recent ${recentShift.timeType} shift submitted ${timeSinceShift} hours ago`);
+        console.log(`⚠️ Login blocked for ${user.username}: Already submitted a ${recentShift.timeType} shift for ${shiftDateStr}`);
 
         return res.status(403).json({
           error: 'RECENT_SHIFT_WARNING',
-          message: `You submitted a ${recentShift.timeType} shift ${timeSinceShift} hours ago. Please check with admin before logging in again.`,
+          message: `You already submitted a ${recentShift.timeType} shift for ${shiftDateStr}. Please check with admin before logging in again.`,
           shiftDetails: {
             timeType: recentShift.timeType,
-            submittedAt: recentShift.shiftDateSubmitted,
-            hoursAgo: timeSinceShift
+            shiftDate: recentShift.date,
+            submittedAt: recentShift.shiftDateSubmitted
           },
           requiresAdminOverride: true
         });
       } else {
-        console.log(`✅ No recent shifts found for ${user.username}, allowing login`);
+        console.log(`✅ No shifts found for today for ${user.username}, allowing login`);
       }
     } else if (user.role === 'worker' && adminOverride) {
       console.log(`🔓 Admin override used for ${user.username} login after recent shift`);

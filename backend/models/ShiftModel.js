@@ -20,6 +20,11 @@ const shiftSchema = new mongoose.Schema({
     required: true
   },
 
+  date: {
+    type: Date,
+    required: true
+  },
+
   shiftDateSubmitted: {
     type: Date,
     required: true,
