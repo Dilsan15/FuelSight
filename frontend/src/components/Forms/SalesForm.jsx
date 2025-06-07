@@ -22,27 +22,17 @@ const SalesForm = ({
   const handleChange = (e) => {
     const { name, value } = e.target;
     const raw = value.replace(/,/g, "");
-    setFormData(prev => ({
-      ...prev,
+    setFormData({
+      ...formData,
       sales: {
-        ...prev.sales,
+        ...formData.sales,
         [name]: getSafeDecimal(raw),
       },
-    }));
+    });
   };
 
   const handleBlur = (e) => {
-    const { name, value } = e.target;
-    const raw = value.replace(/,/g, "");
-    if (raw === "" || Number(raw) < 0) {
-      setFormData(prev => ({
-        ...prev,
-        sales: {
-          ...prev.sales,
-          [name]: "0",
-        },
-      }));
-    }
+    // Don't force any values - let them stay empty if user wants
   };
 
   useEffect(() => {
@@ -78,11 +68,12 @@ const SalesForm = ({
             </Label>
             <Input
               type="text"
-              name="cashWithManager"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.cashWithManager ?? "0")}
+              name="cashWithManager"
+              value={formatCurrencyInput(formData.sales?.cashWithManager || "")}
               onChange={handleChange}
               onBlur={handleBlur}
+              placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
@@ -93,11 +84,12 @@ const SalesForm = ({
             </Label>
             <Input
               type="text"
-              name="qrTransfer"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.qrTransfer ?? "0")}
+              name="qrTransfer"
+              value={formatCurrencyInput(formData.sales?.qrTransfer || "")}
               onChange={handleChange}
               onBlur={handleBlur}
+              placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
@@ -108,11 +100,12 @@ const SalesForm = ({
             </Label>
             <Input
               type="text"
-              name="card"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.card ?? "0")}
+              name="card"
+              value={formatCurrencyInput(formData.sales?.card || "")}
               onChange={handleChange}
               onBlur={handleBlur}
+              placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
@@ -123,11 +116,12 @@ const SalesForm = ({
             </Label>
             <Input
               type="text"
-              name="cheques"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.cheques ?? "0")}
+              name="cheques"
+              value={formatCurrencyInput(formData.sales?.cheques || "")}
               onChange={handleChange}
               onBlur={handleBlur}
+              placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
           </div>
@@ -138,11 +132,12 @@ const SalesForm = ({
             </Label>
             <Input
               type="text"
-              name="lost"
               inputMode="decimal"
-              value={formatCurrencyInput(formData.sales?.lost ?? "0")}
+              name="lost"
+              value={formatCurrencyInput(formData.sales?.lost || "")}
               onChange={handleChange}
               onBlur={handleBlur}
+              placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11 border-red-200 focus:border-red-400 focus:ring-red-400"
             />
           </div>
