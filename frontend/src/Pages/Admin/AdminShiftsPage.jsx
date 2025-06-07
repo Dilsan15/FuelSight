@@ -227,22 +227,42 @@ const AdminShiftsPage = () => {
               0
             );
             
-            const fuelLitres = shiftsOnDate.reduce(
-              (tot, sh) =>
-                tot +
-                sh.readings.reduce((s, r) => s + (r.closing - r.opening), 0),
-              0
+            // Calculate fuel sold by type
+            const fuelSoldByType = shiftsOnDate.reduce(
+              (acc, sh) => {
+                sh.readings.forEach(r => {
+                  const quantity = r.closing - r.opening;
+                  acc[r.fuelType] = (acc[r.fuelType] || 0) + quantity;
+                });
+                return acc;
+              },
+              { MS: 0, HSD: 0, XG: 0 }
             );
 
-            // Calculate daily calibration/testing fuel
-            const dailyCalibrationFuel = shiftsOnDate.reduce(
-              (tot, sh) =>
-                tot +
-                (sh.nozzleTesting || []).reduce((s, t) => s + Number(t.quantity || 0), 0),
-              0
+            // Calculate daily calibration/testing fuel by type
+            const dailyCalibrationFuelByType = shiftsOnDate.reduce(
+              (acc, sh) => {
+                (sh.nozzleTesting || []).forEach(t => {
+                  const quantity = Number(t.quantity || 0);
+                  acc[t.fuelType] = (acc[t.fuelType] || 0) + quantity;
+                });
+                return acc;
+              },
+              { MS: 0, HSD: 0, XG: 0 }
             );
 
-            // Note: dailyTotalCash calculated below using theoretical cash in hand
+            // Total fuel sold (for backward compatibility in calculations)
+            const fuelLitres = fuelSoldByType.MS + fuelSoldByType.HSD + fuelSoldByType.XG;
+
+            // Total calibration fuel (for backward compatibility)
+            const dailyCalibrationFuel = dailyCalibrationFuelByType.MS + dailyCalibrationFuelByType.HSD + dailyCalibrationFuelByType.XG;
+
+            // Calculate net fuel sold (fuel sales - calibration)
+            const netFuelSoldByType = {
+              MS: fuelSoldByType.MS - dailyCalibrationFuelByType.MS,
+              HSD: fuelSoldByType.HSD - dailyCalibrationFuelByType.HSD,
+              XG: fuelSoldByType.XG - dailyCalibrationFuelByType.XG
+            };
 
             // TTS = Fuel Revenue + Lube Sales + Credit Back (Total Theoretical Sale)
             const dailyTTS = dailyFuelRevenue + dailyLube + dailyCreditBackAmt;
@@ -269,7 +289,9 @@ const AdminShiftsPage = () => {
                     </span>
                     <div className="flex gap-8 text-sm text-gray-600">
                       <span>TTS: {formatINR(dailyTTS)}</span>
-                      <span>Fuel: {fuelLitres.toFixed(2)} L</span>
+                      <span>MS: {netFuelSoldByType.MS.toFixed(2)}L</span>
+                      <span>HSD: {netFuelSoldByType.HSD.toFixed(2)}L</span>
+                      <span>XG: {netFuelSoldByType.XG.toFixed(2)}L</span>
                       <span>Shifts: {shiftsOnDate.length}</span>
                     </div>
                   </div>
@@ -365,14 +387,6 @@ const AdminShiftsPage = () => {
                           {/* Operations */}
                           <div className="space-y-3">
                             <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Fuel Sold</span>
-                              <span className="text-lg font-semibold">{fuelLitres.toFixed(2)} L</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">Calibration</span>
-                              <span className="text-lg font-semibold">{dailyCalibrationFuel.toFixed(2)} L</span>
-                            </div>
-                            <div className="flex justify-between">
                               <span className="text-sm text-gray-600">Total Shifts</span>
                               <span className="text-lg font-semibold">{shiftsOnDate.length}</span>
                             </div>
@@ -380,6 +394,33 @@ const AdminShiftsPage = () => {
                         </div>
                       </CardContent>
                     </Card>
+
+
+
+                    {/* Net Fuel Sales Section */}
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <h5 className="font-medium text-gray-700 mb-2 text-sm">Net Fuel Sales</h5>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                          <div className="text-center">
+                            <div className="text-xs text-gray-600 font-medium">MS</div>
+                            <div className="text-lg font-semibold text-gray-800">{netFuelSoldByType.MS.toFixed(2)} L</div>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                          <div className="text-center">
+                            <div className="text-xs text-gray-600 font-medium">HSD</div>
+                            <div className="text-lg font-semibold text-gray-800">{netFuelSoldByType.HSD.toFixed(2)} L</div>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                          <div className="text-center">
+                            <div className="text-xs text-gray-600 font-medium">XG</div>
+                            <div className="text-lg font-semibold text-gray-800">{netFuelSoldByType.XG.toFixed(2)} L</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
                     {/* Per-Shift Cards */}
                     <div className="grid gap-4">
