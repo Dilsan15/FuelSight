@@ -86,45 +86,45 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
   }, [debouncedSearch, user?.token]);
 
   const addCreditSale = () => {
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       creditSales: [
-        ...(formData.creditSales || []),
+        ...(prev.creditSales || []),
         { code: "", dueDate: "", description: "", fuelType: "", amount: "" },
       ],
-    });
+    }));
   };
 
   const deleteCreditSale = (i) => {
     const updated = formData.creditSales.filter((_, idx) => idx !== i);
-    setFormData({ ...formData, creditSales: updated });
+    setFormData(prev => ({ ...prev, creditSales: updated }));
   };
 
   const handleCreditSaleChange = (i, field, value) => {
     const updated = [...(formData.creditSales || [])];
     updated[i] = { ...updated[i], [field]: value };
-    setFormData({ ...formData, creditSales: updated });
+    setFormData(prev => ({ ...prev, creditSales: updated }));
   };
 
   const addCreditBack = () => {
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       creditBack: [
-        ...(formData.creditBack || []),
+        ...(prev.creditBack || []),
         { code: "", amount: "", note: "", paymentType: "QR" },
       ],
-    });
+    }));
   };
 
   const deleteCreditBack = (i) => {
     const updated = formData.creditBack.filter((_, idx) => idx !== i);
-    setFormData({ ...formData, creditBack: updated });
+    setFormData(prev => ({ ...prev, creditBack: updated }));
   };
 
   const handleCreditBackChange = (i, field, value) => {
     const updated = [...(formData.creditBack || [])];
     updated[i] = { ...updated[i], [field]: value };
-    setFormData({ ...formData, creditBack: updated });
+    setFormData(prev => ({ ...prev, creditBack: updated }));
   };
 
   return (
@@ -216,7 +216,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                      <Label>Due Date</Label>
+                      <Label>Due Date (optional)</Label>
                       <Input
                         type="date"
                         value={d.dueDate}
@@ -224,6 +224,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                           handleCreditSaleChange(i, "dueDate", e.target.value)
                         }
                         className="bg-gray-50 border-gray-300"
+                        placeholder="Leave empty for 15 days default"
                       />
                     </div>
 

@@ -45,16 +45,8 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
       )
       .toFixed(2)
   );
-  const creditBackTotal = parseFloat(
-    creditBack
-      .reduce(
-        (sum, p) => sum + parseFloat(parseFloat(p.amount || 0).toFixed(2)),
-        0
-      )
-      .toFixed(2)
-  );
   const lost = parseFloat(parseFloat(sales.lost || 0).toFixed(2));
-  const total = parseFloat((fuelRevenue + lubeRevenue + creditBackTotal - lost).toFixed(2));
+  const total = parseFloat((fuelRevenue + lubeRevenue - lost).toFixed(2));
 
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">

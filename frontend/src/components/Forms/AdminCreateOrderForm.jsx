@@ -61,6 +61,7 @@ const defaultState = {
   userId: "",
   targetUserId: "", // For admin accounts to specify which user's shift to link to
   shiftDate: new Date().toISOString().split("T")[0],
+  shiftType: "Day", // Day or Night
   fuelType: "",
   type: "creditSale",
   defPayAccount: "",
@@ -143,6 +144,7 @@ export default function AdminCreateOrderForm() {
       dueDate: order.dueDate?.split("T")[0] || "",
       // Only set shift date for worker accounts
       shiftDate: orderUser?.role === "worker" ? (order.orderDate?.split("T")[0] || prev.shiftDate) : "",
+      shiftType: order.shiftId?.timeType || "Day", // Get shift type from linked shift
       type: order.type || "creditSale",
       code: order.code || "",
       actName: order.actName || "",
@@ -208,9 +210,9 @@ export default function AdminCreateOrderForm() {
         return;
       }
       
-      // For worker accounts, shift date is required
-      if (selectedPump?.role === "worker" && !form.shiftDate) {
-        alert("Shift date is required when selecting a worker account.");
+      // For worker accounts, shift date and type are required
+      if (selectedPump?.role === "worker" && (!form.shiftDate || !form.shiftType)) {
+        alert("Shift date and shift type are required when selecting a worker account.");
         return;
       }
       
@@ -225,10 +227,7 @@ export default function AdminCreateOrderForm() {
           alert("Fuel type is required for worker credit sales.");
           return;
         }
-        if (!form.dueDate) {
-          alert("Due date is required for credit sales.");
-          return;
-        }
+        // Due date is now optional - will default to 15 days if not provided
         // Additional validation for worker accounts
         if (selectedPump?.role === "worker") {
           if (!form.dayRate || Number(form.dayRate) <= 0) {
@@ -250,9 +249,10 @@ export default function AdminCreateOrderForm() {
         amount: Number(form.amount || 0),
         submittedByName: user.username,
         description: form.description || "",
-        // Include shift date for worker accounts (required)
+        // Include shift date and type for worker accounts (required)
         ...(selectedPump?.role === "worker" && {
-          shiftDate: form.shiftDate
+          shiftDate: form.shiftDate,
+          shiftType: form.shiftType
         }),
         // Credit sale fields
         ...(form.type === "creditSale" && {
@@ -369,7 +369,7 @@ export default function AdminCreateOrderForm() {
             {selectedPump && (
               <div className="text-sm text-muted-foreground mt-1">
                 {selectedPump.role === "worker" 
-                  ? "Worker account: Will calculate fuel quantity and require fuel type. Shift date is required to link to their shift."
+                  ? "Worker account: Will calculate fuel quantity and require fuel type. Shift date and type are required to link to their specific shift."
                   : "Admin account: Manual entry without automatic fuel calculations. Cannot be linked to shifts."
                 }
               </div>
@@ -551,12 +551,13 @@ export default function AdminCreateOrderForm() {
                   </div>
                 )}
                 <div>
-                  <Label>Due Date</Label>
+                  <Label>Due Date (optional - defaults to 15 days)</Label>
                   <Input
                     type="date"
                     value={form.dueDate}
                     onChange={(e) => handleChange("dueDate", e.target.value)}
                     className="h-11"
+                    placeholder="Leave empty for 15 days default"
                   />
                 </div>
               </div>
@@ -618,17 +619,36 @@ export default function AdminCreateOrderForm() {
 
           {/* ────────── common fields ────────── */}
           {selectedPump?.role === "worker" && (
-            <div>
-              <Label>Shift Date *</Label>
-              <Input
-                type="date"
-                value={form.shiftDate}
-                onChange={(e) => handleChange("shiftDate", e.target.value)}
-                className="h-11"
-              />
-              <div className="text-sm text-muted-foreground mt-1">
-                Required: Select the shift date to link this order to the worker's shift on that date.
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Shift Date *</Label>
+                <Input
+                  type="date"
+                  value={form.shiftDate}
+                  onChange={(e) => handleChange("shiftDate", e.target.value)}
+                  className="h-11"
+                />
               </div>
+              <div>
+                <Label>Shift Type *</Label>
+                <Select
+                  value={form.shiftType}
+                  onValueChange={(v) => handleChange("shiftType", v)}
+                >
+                  <SelectTrigger className="h-11 bg-background">
+                    <SelectValue placeholder="Select Shift Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Day">Day Shift</SelectItem>
+                    <SelectItem value="Night">Night Shift</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          {selectedPump?.role === "worker" && (
+            <div className="text-sm text-muted-foreground">
+              Required: Select the shift date and type to link this order to the worker's specific shift.
             </div>
           )}
 

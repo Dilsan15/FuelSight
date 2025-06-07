@@ -150,7 +150,7 @@
           return (
             <ShiftForm
               formData={formData.shift}
-              setFormData={(data) => updateFormData("shift", data)}
+              setFormData={(shiftData) => setFormData(prev => ({ ...prev, shift: shiftData }))}
               onNext={nextStep}
               isLoading={dayRateLoading}
             />

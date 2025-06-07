@@ -4,7 +4,8 @@ const {
   signupUser,
   updateUser,
   deleteUser,
-  getAllUsers
+  getAllUsers,
+  getCurrentUserReadings
 } = require('../controllers/UserController');
 
 
@@ -16,7 +17,13 @@ const router = express.Router();
 // Public routes
 router.post('/login', loginUser);
 
+// Protected routes (require auth)
 router.use(requireAuth)
+
+// User-specific routes (any authenticated user)
+router.get('/my-readings', getCurrentUserReadings);
+
+// Admin-only routes
 router.use(requireAdmin)
 
 router.post('/signup', signupUser);

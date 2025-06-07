@@ -15,13 +15,38 @@ export const roundHalfUp = (num, decimals = 2) => {
 };
 
 /**
- * Safely converts a value to a number with 2 decimal places using round half up
+ * Safely converts a value to a number, preserving whole numbers and limiting decimals to 2 places
  * @param {string|number} value - The value to convert
  * @returns {number} - The converted number
  */
 export const toSafeNumber = (value) => {
     const num = Number(value || 0);
-    return isNaN(num) ? 0 : roundHalfUp(num, 2);
+    if (isNaN(num)) return 0;
+
+    // For whole numbers, return as-is to avoid any floating-point artifacts
+    if (Number.isInteger(num)) {
+        return num;
+    }
+
+    // For decimal numbers, only round if they have more than 2 decimal places
+    // Use parseFloat to handle string inputs properly
+    const str = typeof value === 'string' ? value : num.toString();
+    const decimalIndex = str.indexOf('.');
+
+    if (decimalIndex === -1) {
+        // No decimal point, it's a whole number
+        return num;
+    }
+
+    const decimalPlaces = str.length - decimalIndex - 1;
+
+    // If it has 2 or fewer decimal places, return as-is
+    if (decimalPlaces <= 2) {
+        return num;
+    }
+
+    // Otherwise, round to 2 decimal places
+    return roundHalfUp(num, 2);
 };
 
 /**
@@ -94,4 +119,5 @@ export const safeDivide = (a, b) => {
     const divisor = toSafeNumber(b);
     if (divisor === 0) return 0;
     return toSafeNumber(toSafeNumber(a) / divisor);
-}; 
+};
+

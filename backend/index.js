@@ -26,6 +26,7 @@ const PORT = process.env.PORT || 5001; // Added fallback port
 const allowedOrigins = [
   'http://localhost:3000',  // React default
   'http://localhost:5173',  // Vite default
+  'http://localhost:5001',  // Frontend connecting to backend
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove any undefined values
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import {
   Table,
   TableHeader,
@@ -41,11 +42,15 @@ import {
 import { useDefPayActs } from "@/Hooks/DefpayactHooks/useDefPayActs";
 import { useDeleteDefPayAct } from "@/Hooks/DefpayactHooks/useDeleteDefPayAct";
 import { useDefPayAct } from "@/Hooks/DefpayactHooks/useDefPayAct";
+import { useSynchronizeBalances } from "@/Hooks/DefpayactHooks/useSynchronizeBalances";
+import { useSynchronizeBalance } from "@/Hooks/DefpayactHooks/useSynchronizeBalance";
 
 const ITEMS_PER_PAGE = 10;
 const AdminPayDefActPage = () => {
   const { fetchAccounts } = useDefPayActs();
   const { deleteAccount } = useDeleteDefPayAct();
+  const { synchronizeBalances, isSynchronizing, error: syncError, result } = useSynchronizeBalances();
+  const { synchronizeBalance, isSynchronizing: isSyncingSingle, error: syncSingleError } = useSynchronizeBalance();
   const navigate = useNavigate();
 
   const [search, setSearch] = useState("");
@@ -57,6 +62,7 @@ const AdminPayDefActPage = () => {
 
   const [page, setPage] = useState(1);
   const [allAccounts, setAllAccounts] = useState([]);
+  const [syncSuccess, setSyncSuccess] = useState(null);
 
   useEffect(() => {
     const loadAllAccounts = async () => {
@@ -107,6 +113,48 @@ const AdminPayDefActPage = () => {
     }
   };
 
+  const handleSynchronize = async () => {
+    try {
+      setSyncSuccess(null);
+      const result = await synchronizeBalances();
+      setSyncSuccess(result);
+      
+      // Refresh the accounts list after synchronization
+      const response = await fetchAccounts(
+        search,
+        1,
+        1000,
+        searchBy,
+        sortBy,
+        order
+      );
+      setAllAccounts(response.data || []);
+    } catch (err) {
+      console.error(err);
+      // Error is already handled by the hook
+    }
+  };
+
+  const handleSynchronizeSingle = async (accountId) => {
+    try {
+      await synchronizeBalance(accountId);
+      
+      // Refresh the accounts list after synchronization
+      const response = await fetchAccounts(
+        search,
+        1,
+        1000,
+        searchBy,
+        sortBy,
+        order
+      );
+      setAllAccounts(response.data || []);
+    } catch (err) {
+      console.error(err);
+      // Error is already handled by the hook
+    }
+  };
+
   const filteredAccounts = allAccounts.filter((acc) => {
     const term = search.toLowerCase();
     if (searchBy === "all") {
@@ -150,12 +198,44 @@ const AdminPayDefActPage = () => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight">Accounts</h1>
-        <p className="text-muted-foreground">
-          Manage credit accounts and track balances
-        </p>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Accounts</h1>
+          <p className="text-muted-foreground">
+            Manage credit accounts and track balances
+          </p>
+        </div>
+        <Button 
+          onClick={handleSynchronize}
+          disabled={isSynchronizing}
+          variant="outline"
+          className="h-11 px-6"
+        >
+          {isSynchronizing ? "Synchronizing..." : "🔄 Sync All Balances"}
+        </Button>
       </div>
+
+      {/* Synchronization Results */}
+      {syncSuccess && (
+        <Alert className="border-green-200 bg-green-50">
+          <AlertDescription className="text-green-800">
+            ✅ {syncSuccess.message} - Updated {syncSuccess.updatedAccounts} out of {syncSuccess.totalAccounts} accounts
+            {syncSuccess.errorCount > 0 && ` (${syncSuccess.errorCount} errors)`}
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {syncError && (
+        <Alert variant="destructive">
+          <AlertDescription>{syncError}</AlertDescription>
+        </Alert>
+      )}
+
+      {syncSingleError && (
+        <Alert variant="destructive">
+          <AlertDescription>Individual sync error: {syncSingleError}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-6 md:grid-cols-4">
         <Card>
@@ -359,6 +439,16 @@ const AdminPayDefActPage = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSynchronizeSingle(acc._id)}
+                            disabled={isSyncingSingle(acc._id)}
+                            className="h-8 w-8 p-0"
+                            title="Sync balance"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${isSyncingSingle(acc._id) ? 'animate-spin' : ''}`} />
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"

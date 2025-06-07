@@ -22,26 +22,26 @@ const SalesForm = ({
   const handleChange = (e) => {
     const { name, value } = e.target;
     const raw = value.replace(/,/g, "");
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       sales: {
-        ...formData.sales,
+        ...prev.sales,
         [name]: getSafeDecimal(raw),
       },
-    });
+    }));
   };
 
   const handleBlur = (e) => {
     const { name, value } = e.target;
     const raw = value.replace(/,/g, "");
     if (raw === "" || Number(raw) < 0) {
-      setFormData({
-        ...formData,
+      setFormData(prev => ({
+        ...prev,
         sales: {
-          ...formData.sales,
+          ...prev.sales,
           [name]: "0",
         },
-      });
+      }));
     }
   };
 
@@ -54,14 +54,14 @@ const SalesForm = ({
       return sum + parseFloat(p.amount || 0);
     }, 0);
 
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       sales: {
-        ...formData.sales,
+        ...prev.sales,
         creditSalesTotal: creditSalesTotal.toFixed(2),
         creditBackTotal: creditBackTotal.toFixed(2),
       },
-    });
+    }));
   }, [creditSales, creditBack]);
 
   return (

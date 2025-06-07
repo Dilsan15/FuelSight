@@ -54,18 +54,19 @@ const defPayOrderSchema = new mongoose.Schema({
   },
   dueDate: {
     type: Date,
-    required: function () {
-      return this.type === 'creditSale';
-    },
+    required: false, // No longer mandatory
     validate: {
       validator: function (v) {
-        if (this.type !== 'creditSale') return true;
+        if (this.type !== 'creditSale' || !v) return true;
         return v > this.orderDate;
       },
       message: 'Due date must be after order date'
     },
     default: function () {
-      return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
+      if (this.type === 'creditSale') {
+        return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
+      }
+      return undefined;
     }
   },
   paymentType: {
@@ -110,8 +111,9 @@ defPayOrderSchema.pre('save', async function (next) {
   if (this.isNew || this.isModified('type')) {
     // Validate credit sale requirements (relaxed for admin orders)
     if (this.type === 'creditSale') {
+      // Set default dueDate if not provided
       if (!this.dueDate) {
-        throw new Error('Credit sale requires dueDate');
+        this.dueDate = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000); // 15 days from now
       }
       // Only validate quantity if it's provided
       if (this.quantity != null && this.quantity <= 0) {

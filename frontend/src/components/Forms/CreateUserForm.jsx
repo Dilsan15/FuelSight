@@ -47,7 +47,8 @@ const CreateUserForm = () => {
         grouped[r.fuelType].push(r);
       });
 
-      setForm({
+      setForm(prev => ({
+        ...prev,
         username: existingUser.username || "",
         password: "",
         stationName: existingUser.stationName || "",
@@ -58,7 +59,7 @@ const CreateUserForm = () => {
           Object.entries(grouped).map(([k, v]) => [k, v.length])
         ),
         readings: existingUser.readings || [],
-      });
+      }));
     }
   }, [existingUser]);
 

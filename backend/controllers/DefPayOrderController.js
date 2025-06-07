@@ -11,6 +11,7 @@ const createDefPayOrder = async (req, res) => {
       type,
       amount,
       shiftDate,
+      shiftType,
       shiftUserId,
       paymentType,
       fuelType,
@@ -30,6 +31,11 @@ const createDefPayOrder = async (req, res) => {
     const numAmount = Number(amount);
     if (isNaN(numAmount) || !isFinite(numAmount) || numAmount <= 0) {
       return res.status(400).json({ error: 'Amount must be a valid positive number.' });
+    }
+
+    // Validate shift type when shift date is provided
+    if (shiftDate && !shiftType) {
+      return res.status(400).json({ error: 'Shift type is required when shift date is provided.' });
     }
 
     let shift = null;
@@ -52,7 +58,8 @@ const createDefPayOrder = async (req, res) => {
 
       shift = await Shift.findOne({
         user: userIdForShiftSearch,
-        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
+        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd },
+        ...(shiftType && { timeType: shiftType })
       });
     }
 
@@ -81,7 +88,7 @@ const createDefPayOrder = async (req, res) => {
       paymentType: type === 'creditBack' ? paymentType : undefined,
       fuelType: type === 'creditSale' ? fuelType : undefined,
       quantity: type === 'creditSale' ? quantity : undefined,
-      dueDate: type === 'creditSale' ? dueDate : undefined,
+      dueDate: type === 'creditSale' ? (dueDate || new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)) : undefined,
       submittedByName,
       description,
       code,
@@ -122,6 +129,7 @@ const updateDefPayOrder = async (req, res) => {
     type,
     amount,
     shiftDate,
+    shiftType,
     shiftUserId,
     paymentType,
     fuelType,
@@ -199,7 +207,8 @@ const updateDefPayOrder = async (req, res) => {
 
       newShift = await Shift.findOne({
         user: userIdForShiftSearch,
-        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
+        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd },
+        ...(shiftType && { timeType: shiftType })
       });
 
       console.log('- Shift found:', newShift ? 'YES' : 'NO');
@@ -394,7 +403,7 @@ const updateDefPayOrder = async (req, res) => {
       paymentType: newType === 'creditBack' ? paymentType : undefined,
       fuelType: newType === 'creditSale' ? fuelType : undefined,
       quantity: newType === 'creditSale' ? quantity : undefined,
-      dueDate: newType === 'creditSale' && dueDate ? new Date(dueDate + 'T12:00:00.000Z') : undefined // Also fix dueDate
+      dueDate: newType === 'creditSale' ? (dueDate ? new Date(dueDate + 'T12:00:00.000Z') : new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)) : undefined // Default to 15 days if not provided
     };
 
     console.log('🔍 FINAL UPDATE PAYLOAD:');

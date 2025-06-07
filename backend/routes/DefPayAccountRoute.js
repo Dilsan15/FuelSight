@@ -6,7 +6,9 @@ const {
   updateDefPayAccount,
   deleteDefPayAccount,
   getDefPayAccounts,
-  getDefPayAccount
+  getDefPayAccount,
+  synchronizeBalance,
+  synchronizeAllBalances
 } = require('../controllers/DefPayAccountController');
 const requireAdmin = require('../middleware/RequireAdmin');
 const requireAuth = require('../middleware/RequireAuth');
@@ -23,6 +25,8 @@ router.use(requireAdmin)
 router.post('/create', createDefPayAccount);
 router.put('/update/:id', updateDefPayAccount);
 router.delete('/delete/:id', deleteDefPayAccount);
+router.post('/synchronize-balance/:id', synchronizeBalance);
+router.post('/synchronize-balances', synchronizeAllBalances);
 
 
 module.exports = router;

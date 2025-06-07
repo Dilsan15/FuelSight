@@ -21,7 +21,11 @@ const updateUserReadings = async (userDoc, shiftReadings, operation = 'update') 
     return;
   }
 
+  console.log(`🔄 Updating user readings for user ${userDoc._id} with operation: ${operation}`);
+  console.log(`📊 Shift readings to process:`, shiftReadings.map(r => `${r.fuelType} nozzle ${r.nozzle}: ${r.opening} → ${r.closing}`));
+
   const updated = userDoc.readings || [];
+  console.log(`📊 Current user readings:`, updated.map(r => `${r.fuelType} nozzle ${r.nozzle}: ${r.closing}`));
 
   for (const reading of shiftReadings) {
     const { fuelType, nozzle, opening, closing } = reading;
@@ -32,20 +36,25 @@ const updateUserReadings = async (userDoc, shiftReadings, operation = 'update') 
       const newClosing = roundHalfUp(closing || 0, 2);
 
       if (idx !== -1) {
+        const oldClosing = updated[idx].closing;
         updated[idx].closing = newClosing;
+        console.log(`🔄 Updated ${fuelType} nozzle ${nozzle}: ${oldClosing} → ${newClosing}`);
       } else {
         updated.push({
           fuelType,
           nozzle,
           closing: newClosing
         });
+        console.log(`➕ Added new reading ${fuelType} nozzle ${nozzle}: ${newClosing}`);
       }
     } else if (operation === 'revert') {
       // For deletions, revert to the opening value
       const revertedClosing = roundHalfUp(opening || 0, 2);
 
       if (idx !== -1) {
+        const oldClosing = updated[idx].closing;
         updated[idx].closing = revertedClosing;
+        console.log(`↩️ Reverted ${fuelType} nozzle ${nozzle}: ${oldClosing} → ${revertedClosing}`);
       }
     }
   }
@@ -55,6 +64,8 @@ const updateUserReadings = async (userDoc, shiftReadings, operation = 'update') 
     reading.closing = roundHalfUp(reading.closing || 0, 2);
     if (reading.closing < 0) reading.closing = 0;
   });
+
+  console.log(`📊 Final user readings:`, updated.map(r => `${r.fuelType} nozzle ${r.nozzle}: ${r.closing}`));
 
   userDoc.readings = updated;
   await userDoc.save();
@@ -70,25 +81,54 @@ const synchronizeUserReadings = async (userId) => {
     const user = await User.findById(userId);
     if (!user) {
       console.log('❌ User not found for synchronization');
-      return;
+      return { success: false, error: 'User not found for synchronization' };
     }
 
-    // Find the user's most recent shift, giving priority to night shifts
-    const latestShift = await Shift.findOne({ user: userId })
-      .sort({
-        shiftDateSubmitted: -1,  // Most recent date first
-        timeType: 1              // Night shifts get priority (Night comes after Day alphabetically)
-      })
+    // Find the most recent date with shifts for this user
+    const mostRecentShift = await Shift.findOne({ user: userId })
+      .sort({ shiftDateSubmitted: -1 })
       .lean();
 
-    if (!latestShift || !latestShift.readings) {
-      console.log('❌ No shifts found for user or no readings in latest shift');
-      return;
+    if (!mostRecentShift) {
+      console.log('❌ No shifts found for user');
+      return { success: false, error: 'No shifts found for user', noShifts: true };
     }
 
-    console.log(`🔄 Synchronizing user readings with latest ${latestShift.timeType} shift from ${new Date(latestShift.shiftDateSubmitted).toLocaleDateString()}`);
+    // Get the most recent date
+    const mostRecentDate = new Date(mostRecentShift.shiftDateSubmitted);
+    const dateStart = new Date(mostRecentDate);
+    dateStart.setUTCHours(0, 0, 0, 0);
+    const dateEnd = new Date(mostRecentDate);
+    dateEnd.setUTCHours(23, 59, 59, 999);
 
-    // Update user readings to match the latest shift's closing readings
+    // Find all shifts for the most recent date
+    const shiftsOnMostRecentDate = await Shift.find({
+      user: userId,
+      shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
+    }).lean();
+
+    if (shiftsOnMostRecentDate.length === 0) {
+      console.log('❌ No shifts found for the most recent date');
+      return { success: false, error: 'No shifts found for the most recent date', noShifts: true };
+    }
+
+    // Prioritize night shift, then day shift
+    let latestShift = shiftsOnMostRecentDate.find(shift => shift.timeType === 'Night');
+    if (!latestShift) {
+      // If no night shift, find the latest day shift on that date
+      latestShift = shiftsOnMostRecentDate
+        .filter(shift => shift.timeType === 'Day')
+        .sort((a, b) => new Date(b.shiftDateSubmitted) - new Date(a.shiftDateSubmitted))[0];
+    }
+
+    if (!latestShift || !latestShift.readings) {
+      console.log('❌ No valid shift found with readings');
+      return { success: false, error: 'No readings in latest shift', noShifts: true };
+    }
+
+    console.log(`🔄 Synchronizing user readings with ${latestShift.timeType} shift from ${new Date(latestShift.shiftDateSubmitted).toLocaleDateString()}`);
+
+    // Update user readings to match the selected shift's closing readings
     const updatedReadings = user.readings || [];
 
     for (const shiftReading of latestShift.readings) {
@@ -115,10 +155,13 @@ const synchronizeUserReadings = async (userId) => {
 
     user.readings = updatedReadings;
     await user.save();
-    console.log(`✅ User readings synchronized with latest ${latestShift.timeType} shift successfully`);
+    console.log(`✅ User readings synchronized with ${latestShift.timeType} shift successfully`);
+
+    return { success: true, readings: updatedReadings };
 
   } catch (error) {
     console.error('❌ Error synchronizing user readings:', error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -262,7 +305,7 @@ const submitShift = async (req, res) => {
         defPayAccount: account._id,
         submittedByName: shift.submittedByName,
         orderDate: shiftDate, // Use the shift date object instead of creating new Date
-        dueDate: new Date(d.dueDate),
+        dueDate: d.dueDate ? new Date(d.dueDate) : getDefaultDueDate(),
         fuelType: fuelType,
         quantity: quantity
       };
@@ -278,7 +321,7 @@ const submitShift = async (req, res) => {
         actName: account.firstName + ' ' + account.lastName,
         type: 'creditBack',
         amount: roundHalfUp(Number(p.amount || 0), 2),
-        note: p.note || '',
+        description: p.note || '',
         user: req.user._id,
         defPayAccount: account._id,
         submittedByName: shift.submittedByName,
@@ -323,11 +366,11 @@ const submitShift = async (req, res) => {
         await DefPayAccount.findByIdAndUpdate(
           creditSale.defPayAccount,
           {
-            $inc: { balance: creditSale.amount },
+            $inc: { balance: -creditSale.amount }, // Credit sale decreases balance (customer owes money)
             $push: {
               paymentHistory: {
                 defPayOrder: creditSale._id,
-                amount: creditSale.amount,
+                amount: -creditSale.amount, // Negative amount for credit sale
                 type: 'debit',
                 date: new Date()
               }
@@ -341,11 +384,11 @@ const submitShift = async (req, res) => {
         await DefPayAccount.findByIdAndUpdate(
           creditBack.defPayAccount,
           {
-            $inc: { balance: -creditBack.amount },
+            $inc: { balance: creditBack.amount }, // Credit back increases balance (customer pays back)
             $push: {
               paymentHistory: {
                 defPayOrder: creditBack._id,
-                amount: creditBack.amount,
+                amount: creditBack.amount, // Positive amount for credit back
                 type: 'credit',
                 date: new Date()
               }
@@ -361,10 +404,24 @@ const submitShift = async (req, res) => {
     // Update user's readings outside transaction
     const userDoc = await User.findById(req.user._id);
     if (userDoc) {
-      await updateUserReadings(userDoc, readings, 'update');
+      try {
+        await updateUserReadings(userDoc, readings, 'update');
+        console.log('✅ User readings updated successfully');
 
-      // Double-check synchronization with latest shift to ensure accuracy
-      await synchronizeUserReadings(req.user._id);
+        // Double-check synchronization with latest shift to ensure accuracy
+        const synchronizationResult = await synchronizeUserReadings(req.user._id);
+        if (!synchronizationResult.success) {
+          console.error('❌ Error synchronizing user readings:', synchronizationResult.error);
+          // Don't throw error here - just log it, as the shift was already created successfully
+          console.log('⚠️ Shift created successfully but synchronization failed - user readings may need manual sync');
+        } else {
+          console.log('✅ User readings synchronized successfully');
+        }
+      } catch (readingsError) {
+        console.error('❌ Error updating user readings:', readingsError);
+        // Don't throw error here - just log it, as the shift was already created successfully
+        console.log('⚠️ Shift created successfully but user readings update failed');
+      }
     } else {
       console.log('❌ User document not found');
     }
@@ -482,7 +539,11 @@ const updateShift = async (req, res) => {
         await updateUserReadings(userDoc, readings, 'update');
 
         // Synchronize with latest shift to ensure accuracy
-        await synchronizeUserReadings(shift.user);
+        const synchronizationResult = await synchronizeUserReadings(shift.user);
+        if (!synchronizationResult.success) {
+          console.error('❌ Error synchronizing user readings:', synchronizationResult.error);
+          throw new Error(synchronizationResult.error);
+        }
       }
     }
 
@@ -521,9 +582,9 @@ const deleteShift = async (req, res) => {
       if (account) {
         // Revert the balance changes
         if (order.type === 'creditBack') {
-          account.balance -= order.amount; // Customer had paid back, so reduce balance
+          account.balance -= order.amount; // Revert credit back: customer had paid back, so reduce balance (undo the increase)
         } else if (order.type === 'creditSale') {
-          account.balance += order.amount; // Customer had credit, so increase balance
+          account.balance += order.amount; // Revert credit sale: customer had credit, so increase balance (undo the decrease)
         }
 
         // Remove from payment history
@@ -579,8 +640,8 @@ const getShifts = async (req, res) => {
       .sort({ shiftDateSubmitted: -1 })
       .skip(skip)
       .limit(limit)
-      .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
-      .populate({ path: "creditBack", select: "amount code actName paymentType" })
+      .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate description" })
+      .populate({ path: "creditBack", select: "amount code actName paymentType description" })
       .populate({ path: "user", select: "stationName" })
       .lean();          // optional – send plain objects
 
@@ -604,8 +665,8 @@ const getShift = async (req, res) => {
   try {
     const shift = await Shift.findById(id)
 
-      .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate" })
-      .populate({ path: "creditBack", select: "amount code actName paymentType" })
+      .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate description" })
+      .populate({ path: "creditBack", select: "amount code actName paymentType description" })
       .populate({ path: "user", select: "stationName" })
       .lean();
     if (!shift) {
@@ -631,15 +692,35 @@ const synchronizeReadings = async (req, res) => {
     }
 
     // Perform synchronization
-    await synchronizeUserReadings(userId);
+    const synchronizationResult = await synchronizeUserReadings(userId);
 
-    // Fetch updated user to return current readings
-    const updatedUser = await User.findById(userId).select('readings');
+    if (synchronizationResult.success) {
+      // Synchronization was successful
+      res.status(200).json({
+        message: '✅ User readings synchronized successfully.',
+        readings: synchronizationResult.readings
+      });
+    } else if (synchronizationResult.noShifts) {
+      // No shifts found - reset readings to 0 instead of clearing them
+      const resetReadings = user.readings.map(reading => ({
+        fuelType: reading.fuelType,
+        nozzle: reading.nozzle,
+        closing: 0
+      }));
 
-    res.status(200).json({
-      message: '✅ User readings synchronized successfully.',
-      readings: updatedUser.readings
-    });
+      user.readings = resetReadings;
+      await user.save();
+
+      console.log('✅ User readings reset to 0 due to no shifts found');
+
+      res.status(200).json({
+        message: 'No previous shifts found. User readings have been reset to 0.',
+        readings: resetReadings
+      });
+    } else {
+      // Other error occurred
+      throw new Error(synchronizationResult.error);
+    }
 
   } catch (error) {
     console.error('❌ Error synchronizing readings:', error);

@@ -151,10 +151,30 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// Get current user readings (for debugging)
+const getCurrentUserReadings = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    res.status(200).json({
+      userId: user._id,
+      username: user.username,
+      readings: user.readings || []
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user readings:', error);
+    res.status(500).json({ error: 'Failed to fetch user readings.' });
+  }
+};
+
 module.exports = {
   signupUser,
   loginUser,
   updateUser,
   deleteUser,
-  getAllUsers
+  getAllUsers,
+  getCurrentUserReadings
 };

@@ -31,32 +31,35 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
     .filter((v, i, arr) => arr.indexOf(v) === i);
 
   useEffect(() => {
+    // Only update nozzleTesting if it's not properly initialized
     if (
-      !formData.nozzleTesting ||
-      formData.nozzleTesting.length !== fuelTypes.length
+      fuelTypes.length > 0 &&
+      (!formData.nozzleTesting ||
+      formData.nozzleTesting.length !== fuelTypes.length ||
+      !fuelTypes.every(ft => formData.nozzleTesting.some(nt => nt.fuelType === ft)))
     ) {
       const preset = fuelTypes.map((fuelType) => ({ fuelType, quantity: "0" }));
-      setFormData({ nozzleTesting: preset });
+      const updatedShift = { ...formData, nozzleTesting: preset };
+      setFormData(updatedShift);
     }
-  }, [fuelTypes]);
+  }, [fuelTypes.join(',')]); // Use join to avoid unnecessary re-renders when array order changes
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ [name]: value });
+    const updatedShift = { ...formData, [name]: value };
+    setFormData(updatedShift);
   };
-
-
 
   const handleReadingChange = (fuelType, nozzle, field, value) => {
     const updated = formData.readings.map((r) =>
       r.fuelType === fuelType && r.nozzle === nozzle
-        ? { ...r, [field]: getSafePositive(value) }
+        ? { ...r, [field]: value } // Use the value as-is since it's already processed by getSafeDecimal
         : r
     );
-    setFormData({ readings: updated });
+
+    const updatedShift = { ...formData, readings: updated };
+    setFormData(updatedShift);
   };
-
-
 
   const handleSyncReadings = async () => {
     try {
@@ -83,7 +86,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
             }
             return reading;
           });
-          setFormData({ readings: updatedReadings });
+          const updatedShift = { ...formData, readings: updatedReadings };
+          setFormData(updatedShift);
           console.log('✅ All readings synchronized successfully');
         } else {
           // These appear to be default/placeholder readings, default to 0
@@ -91,7 +95,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
             ...reading,
             opening: "0"
           }));
-          setFormData({ readings: updatedReadings });
+          const updatedShift = { ...formData, readings: updatedReadings };
+          setFormData(updatedShift);
           console.log('ℹ️ Default readings detected, opening readings set to 0');
         }
       } else {
@@ -100,7 +105,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
           ...reading,
           opening: "0"
         }));
-        setFormData({ readings: updatedReadings });
+        const updatedShift = { ...formData, readings: updatedReadings };
+        setFormData(updatedShift);
         console.log('ℹ️ No previous shifts found, opening readings set to 0');
       }
     } catch (error) {
@@ -127,7 +133,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
             }
             return reading;
           });
-          setFormData({ readings: updatedReadings });
+          const updatedShift = { ...formData, readings: updatedReadings };
+          setFormData(updatedShift);
           console.log(`✅ ${fuelType} nozzle ${nozzle} synchronized successfully`);
         } else {
           // This appears to be a default/placeholder reading, default to 0
@@ -140,7 +147,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
             }
             return reading;
           });
-          setFormData({ readings: updatedReadings });
+          const updatedShift = { ...formData, readings: updatedReadings };
+          setFormData(updatedShift);
           console.log(`ℹ️ Default reading detected for ${fuelType} nozzle ${nozzle}, opening set to 0`);
         }
       } else {
@@ -154,7 +162,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
           }
           return reading;
         });
-        setFormData({ readings: updatedReadings });
+        const updatedShift = { ...formData, readings: updatedReadings };
+        setFormData(updatedShift);
         console.log(`ℹ️ No previous reading found for ${fuelType} nozzle ${nozzle}, opening set to 0`);
       }
     } catch (error) {
@@ -162,8 +171,6 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
       alert(`Failed to sync ${fuelType} nozzle ${nozzle}. Please try again.`);
     }
   };
-
-
 
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
@@ -182,9 +189,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
               <Input
                 name="submittedByName"
                 value={formData.submittedByName || ""}
-                onChange={(e) =>
-                  setFormData({ submittedByName: e.target.value })
-                }
+                onChange={(e) => {
+                  const updatedShift = { ...formData, submittedByName: e.target.value };
+                  setFormData(updatedShift);
+                }}
                 className="bg-gray-50 border-gray-300 h-11"
               />
             </div>
@@ -206,7 +214,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
               </Label>
               <Select
                 value={formData.timeType || ""}
-                onValueChange={(value) => setFormData({ timeType: value })}
+                onValueChange={(value) => {
+                  const updatedShift = { ...formData, timeType: value };
+                  setFormData(updatedShift);
+                }}
               >
                 <SelectTrigger className="bg-gray-50 border-gray-300 h-11">
                   <SelectValue placeholder="Select shift time" />
@@ -225,16 +236,42 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
           <h3 className="text-2xl font-bold text-gray-900">
             Applicable Day Rates (₹/L)
           </h3>
+    
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {fuelTypes.map((fuel) => (
               <div key={fuel} className="space-y-3">
                 <Label className="text-sm font-semibold text-gray-700">
-                  {fuel} (₹/L)
+                  {fuel} (₹/L) *
                 </Label>
                 <Input
-                  value={formData.dayRate?.[fuel] ?? "N/A"}
-                  readOnly
-                  className="bg-gray-100 border-gray-300 text-gray-600 cursor-not-allowed h-11"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={formData.dayRate?.[fuel] ?? ""}
+                  onChange={(e) => {
+                    const updatedShift = {
+                      ...formData,
+                      dayRate: {
+                        ...formData.dayRate,
+                        [fuel]: getSafeDecimal(e.target.value),
+                      },
+                    };
+                    setFormData(updatedShift);
+                  }}
+                  onBlur={(e) => {
+                    if (e.target.value === "" || Number(e.target.value) < 0) {
+                      const updatedShift = {
+                        ...formData,
+                        dayRate: {
+                          ...formData.dayRate,
+                          [fuel]: "0",
+                        },
+                      };
+                      setFormData(updatedShift);
+                    }
+                  }}
+                  className="bg-white border-gray-300 h-11"
+                  placeholder="0.00"
                 />
               </div>
             ))}
@@ -282,7 +319,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                           }
                         : entry
                     );
-                    setFormData({ nozzleTesting: updated });
+                    const updatedShift = { ...formData, nozzleTesting: updated };
+                    setFormData(updatedShift);
                   }}
                   onBlur={(e) => {
                     if (e.target.value === "" || Number(e.target.value) < 0) {
@@ -291,7 +329,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                           ? { ...entry, quantity: "0" }
                           : entry
                       );
-                      setFormData({ nozzleTesting: updated });
+                      const updatedShift = { ...formData, nozzleTesting: updated };
+                      setFormData(updatedShift);
                     }
                   }}
                   className="bg-gray-50 border-gray-300 h-11"
@@ -343,13 +382,28 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                       <div className="flex items-center gap-2">
                         <div className="flex-1">
                           <Label className="text-xs text-gray-600 mb-1 block">
-                            Opening (L)
+                            Opening (L) *
                           </Label>
                           <Input
                             type="number"
+                            min={0}
+                            step="any"
                             value={opening}
-                            readOnly
+                            onChange={(e) =>
+                              handleReadingChange(
+                                fuel,
+                                nozzle,
+                                "opening",
+                                getSafeDecimal(e.target.value)
+                              )
+                            }
+                            onBlur={(e) => {
+                              if (e.target.value === "") {
+                                handleReadingChange(fuel, nozzle, "opening", "0");
+                              }
+                            }}
                             className="bg-white border-gray-300 text-gray-700 h-9 text-sm"
+                            placeholder="Enter opening reading"
                           />
                         </div>
                         <Button
@@ -357,9 +411,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                           size="sm"
                           onClick={() => handleSyncSingleNozzle(fuel, nozzle)}
                           disabled={isSyncingThisNozzle || isSyncing}
-                          className="h-9 px-2 text-xs mt-5 min-w-[45px]"
+                          className="h-9 px-3 text-xs mt-5"
+                          title="Sync from previous shift"
                         >
-                          {isSyncingThisNozzle ? "..." : "↻"}
+                          {isSyncingThisNozzle ? "..." : "Sync"}
                         </Button>
                       </div>
                       
@@ -401,7 +456,10 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                               const openingVal = Number(opening) || 0;
                               const closingVal = Number(closing) || 0;
                               const volumeSold = closingVal - openingVal;
-                              return volumeSold >= 0 ? volumeSold.toFixed(2) : "0.00";
+                              // Only show decimals if the result is not a whole number
+                              return volumeSold >= 0 ? 
+                                (Number.isInteger(volumeSold) ? volumeSold.toString() : volumeSold.toFixed(2)) 
+                                : "0";
                             })()}
                             readOnly
                             className="bg-green-50 border-green-200 text-green-700 h-9 text-sm font-medium"
@@ -433,7 +491,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                   onChange={(e) => {
                     const updated = [...formData.lubeSales];
                     updated[index].description = e.target.value;
-                    setFormData({ lubeSales: updated });
+                    const updatedShift = { ...formData, lubeSales: updated };
+                    setFormData(updatedShift);
                   }}
                   className="bg-gray-50 border-gray-300 h-11"
                 />
@@ -450,15 +509,17 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                     const raw = e.target.value.replace(/,/g, "");
                     const updated = [...formData.lubeSales];
                     updated[index].amount = getSafeDecimal(raw);
-                    setFormData({ lubeSales: updated });
+                    const updatedShift = { ...formData, lubeSales: updated };
+                    setFormData(updatedShift);
                   }}
                   onBlur={(e) => {
                     const raw = e.target.value.replace(/,/g, "");
-                    const updated = [...formData.lubeSales];
-                    if (raw === "" || Number(raw) < 0) {
-                      updated[index].amount = "0";
-                      setFormData({ lubeSales: updated });
-                    }
+                                          const updated = [...formData.lubeSales];
+                      if (raw === "" || Number(raw) < 0) {
+                        updated[index].amount = "0";
+                        const updatedShift = { ...formData, lubeSales: updated };
+                        setFormData(updatedShift);
+                      }
                   }}
                   className="bg-gray-50 border-gray-300 h-11"
                 />
@@ -475,14 +536,16 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                   onChange={(e) => {
                     const updated = [...formData.lubeSales];
                     updated[index].quantity = getSafeDecimal(e.target.value);
-                    setFormData({ lubeSales: updated });
+                    const updatedShift = { ...formData, lubeSales: updated };
+                    setFormData(updatedShift);
                   }}
                   onBlur={(e) => {
-                    if (e.target.value === "" || Number(e.target.value) < 0) {
-                      const updated = [...formData.lubeSales];
-                      updated[index].quantity = "0";
-                      setFormData({ lubeSales: updated });
-                    }
+                                          if (e.target.value === "" || Number(e.target.value) < 0) {
+                        const updated = [...formData.lubeSales];
+                        updated[index].quantity = "0";
+                        const updatedShift = { ...formData, lubeSales: updated };
+                        setFormData(updatedShift);
+                      }
                   }}
                   className="bg-gray-50 border-gray-300 h-11"
                 />
@@ -494,7 +557,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                     const updated = formData.lubeSales.filter(
                       (_, i) => i !== index
                     );
-                    setFormData({ lubeSales: updated });
+                    const updatedShift = { ...formData, lubeSales: updated };
+                    setFormData(updatedShift);
                   }}
                   className="h-11 px-6"
                 >
@@ -511,7 +575,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                   ...(formData.lubeSales || []),
                   { description: "", amount: "", quantity: "0" },
                 ];
-                setFormData({ lubeSales: updated });
+                const updatedShift = { ...formData, lubeSales: updated };
+                setFormData(updatedShift);
               }}
               className="h-11 px-6"
             >

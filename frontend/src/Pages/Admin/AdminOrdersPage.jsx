@@ -108,7 +108,7 @@ const AdminOrdersPage = () => {
     setSearch("");
     setPage(1);
     setActiveTab(tab);
-    setFilter({ fuelType: "", dueInDays: "", paymentType: "" });
+    setFilter(prev => ({ ...prev, fuelType: "", dueInDays: "", paymentType: "" }));
     initializedTabs.current[tab] = true;
   };
 

@@ -518,7 +518,6 @@ const AdminShiftSummaryPage = () => {
                       <th className="text-left p-3 font-medium text-gray-600">Fuel</th>
                       <th className="text-right p-3 font-medium text-gray-600">Quantity</th>
                       <th className="text-left p-3 font-medium text-gray-600">Due Date</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Description</th>
                       <th className="text-center p-3 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -542,13 +541,6 @@ const AdminShiftSummaryPage = () => {
                         </td>
                         <td className="p-3">
                           <span className="text-sm">{formatDateUTC(d.dueDate)}</span>
-                        </td>
-                        <td className="p-3">
-                          {d.description && (
-                            <span className="text-sm text-gray-600 max-w-32 truncate" title={d.description}>
-                              {d.description}
-                            </span>
-                          )}
                         </td>
                         <td className="p-3 text-center">
                           <Link
@@ -585,7 +577,6 @@ const AdminShiftSummaryPage = () => {
                       <th className="text-left p-3 font-medium text-gray-600">Account</th>
                       <th className="text-right p-3 font-medium text-gray-600">Amount</th>
                       <th className="text-left p-3 font-medium text-gray-600">Payment Type</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Description</th>
                       <th className="text-center p-3 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -603,13 +594,6 @@ const AdminShiftSummaryPage = () => {
                         </td>
                         <td className="p-3">
                           <span className="font-medium">{p.paymentType}</span>
-                        </td>
-                        <td className="p-3">
-                          {p.description && (
-                            <span className="text-sm text-gray-600 max-w-32 truncate" title={p.description}>
-                              {p.description}
-                            </span>
-                          )}
                         </td>
                         <td className="p-3 text-center">
                           <Link

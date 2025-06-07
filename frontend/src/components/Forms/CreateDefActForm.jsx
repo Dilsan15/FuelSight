@@ -47,14 +47,15 @@ const CreateDefPayActForm = () => {
   // ⛳ Prefill if editing
   useEffect(() => {
     if (isEdit && existingData) {
-      setFormData({
+      setFormData(prev => ({
+        ...prev,
         firstName: existingData.firstName || "",
         lastName: existingData.lastName || "",
         phoneNumber: existingData.phoneNumber || "",
         address: existingData.address || "",
         note: existingData.note || "",
         code: existingData.code || "",
-      });
+      }));
       setUseDefaultCode(!existingData.code); // If there's no custom code, use default
     }
   }, [existingData, isEdit]);

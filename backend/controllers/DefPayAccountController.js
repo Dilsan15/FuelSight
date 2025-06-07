@@ -296,10 +296,103 @@ const getDefPayAccounts = async (req, res) => {
 };
 
 
+// SYNCHRONIZE SINGLE BALANCE
+const synchronizeBalance = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    console.log(`🔄 Starting balance synchronization for account ${id}...`);
+
+    const account = await DefPayAccount.findById(id).populate('paymentHistory.defPayOrder');
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    // Calculate balance from payment history
+    const calculatedBalance = account.paymentHistory.reduce((sum, entry) => {
+      return sum + (entry.amount || 0);
+    }, 0);
+
+    const oldBalance = account.balance;
+    const wasUpdated = Math.abs(account.balance - calculatedBalance) > 0.01;
+
+    if (wasUpdated) {
+      account.balance = calculatedBalance;
+      await account.save();
+      console.log(`✅ Updated account ${account.code}: ${oldBalance} → ${calculatedBalance}`);
+    } else {
+      console.log(`✅ Account ${account.code} balance already correct: ${calculatedBalance}`);
+    }
+
+    res.status(200).json({
+      message: wasUpdated ? `✅ Balance updated` : `✅ Balance already correct`,
+      account: {
+        code: account.code,
+        oldBalance,
+        newBalance: calculatedBalance,
+        wasUpdated
+      }
+    });
+  } catch (err) {
+    console.error('❌ Synchronization error:', err);
+    res.status(500).json({ error: 'Failed to synchronize balance.' });
+  }
+};
+
+// SYNCHRONIZE ALL BALANCES
+const synchronizeAllBalances = async (req, res) => {
+  try {
+    console.log('🔄 Starting balance synchronization for all accounts...');
+
+    const accounts = await DefPayAccount.find({}).populate('paymentHistory.defPayOrder');
+    let updatedCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    for (const account of accounts) {
+      try {
+        // Calculate balance from payment history
+        const calculatedBalance = account.paymentHistory.reduce((sum, entry) => {
+          return sum + (entry.amount || 0);
+        }, 0);
+
+        // Update balance if it's different
+        if (Math.abs(account.balance - calculatedBalance) > 0.01) { // Allow for small floating point differences
+          const oldBalance = account.balance;
+          account.balance = calculatedBalance;
+          await account.save();
+
+          console.log(`✅ Updated account ${account.code}: ${oldBalance} → ${calculatedBalance}`);
+          updatedCount++;
+        }
+      } catch (error) {
+        console.error(`❌ Error updating account ${account.code}:`, error);
+        errors.push(`${account.code}: ${error.message}`);
+        errorCount++;
+      }
+    }
+
+    console.log(`🎉 Synchronization complete: ${updatedCount} updated, ${errorCount} errors`);
+
+    res.status(200).json({
+      message: `✅ Balance synchronization complete`,
+      totalAccounts: accounts.length,
+      updatedAccounts: updatedCount,
+      errorCount,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (err) {
+    console.error('❌ Synchronization error:', err);
+    res.status(500).json({ error: 'Failed to synchronize balances.' });
+  }
+};
+
 module.exports = {
   createDefPayAccount,
   updateDefPayAccount,
   deleteDefPayAccount,
   getDefPayAccounts,
-  getDefPayAccount
+  getDefPayAccount,
+  synchronizeBalance,
+  synchronizeAllBalances
 };
