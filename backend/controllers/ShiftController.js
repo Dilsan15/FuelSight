@@ -265,7 +265,7 @@ const submitShift = async (req, res) => {
     const shiftData = {
       submittedByName: shift.submittedByName,
       timeType: shift.timeType,
-      shiftDateSubmitted: shiftDate, // Use the specified shift date instead of current timestamp
+      date: shiftDate, // The actual shift work date
       sales: sanitizedSales,
       readings: readings,
       dayRate: Object.fromEntries(
