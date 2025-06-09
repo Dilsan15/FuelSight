@@ -630,14 +630,14 @@ const getShifts = async (req, res) => {
 
   const filter = {};
   if (start || end) {
-    filter.shiftDateSubmitted = {};
-    if (start) filter.shiftDateSubmitted.$gte = new Date(start);
-    if (end) filter.shiftDateSubmitted.$lte = new Date(end);
+    filter.date = {};
+    if (start) filter.date.$gte = new Date(start);
+    if (end) filter.date.$lte = new Date(end);
   }
 
   try {
     const shifts = await Shift.find(filter)
-      .sort({ shiftDateSubmitted: -1 })
+      .sort({ date: -1, shiftDateSubmitted: -1 })
       .skip(skip)
       .limit(limit)
       .populate({ path: "creditSales", select: "amount code actName fuelType quantity dueDate description" })

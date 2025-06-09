@@ -31,7 +31,8 @@ import {
 // group shifts into YYYY-MM-DD buckets (UTC-safe)
 const groupShiftsByDate = (shifts) =>
   shifts.reduce((acc, sh) => {
-    const d = new Date(sh.shiftDateSubmitted);
+    // Use the user-selected shift date instead of submission timestamp
+    const d = new Date(sh.date || sh.shiftDateSubmitted);
     const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
       2,
       "0"
