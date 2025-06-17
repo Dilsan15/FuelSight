@@ -62,7 +62,9 @@ const AdminShiftSummaryPage = () => {
     user,
     submittedByName,
     timeType,
+    date,
     shiftDateSubmitted,
+    createdAt,
     sales = {},
     readings = [],
     lubeSales = [],
@@ -152,9 +154,12 @@ const AdminShiftSummaryPage = () => {
           <h1 className="text-3xl font-bold text-gray-900">
             {user?.stationName || "Unknown Station"}
           </h1>
-          <p className="text-gray-600 mt-1">
-            {timeType} Shift – {formatDateUTC(shiftDateSubmitted)}
-          </p>
+          <div className="text-gray-600 mt-1 space-y-1">
+            <p>{timeType} Shift – {formatDateUTC(date)}</p>
+            <p className="text-sm">
+              <span className="font-medium">Submitted:</span> {formatDateUTC(shiftDateSubmitted)}
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button
