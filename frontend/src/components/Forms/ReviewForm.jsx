@@ -48,6 +48,16 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
   const lost = parseFloat(parseFloat(sales.lost || 0).toFixed(2));
   const total = parseFloat((fuelRevenue + lubeRevenue - lost).toFixed(2));
 
+  // Calculate credit sales and credit back totals directly from arrays
+  const creditSalesTotal = (formData.creditSales || []).reduce(
+    (sum, d) => sum + parseFloat(d.amount || 0),
+    0
+  );
+  const creditBackTotal = (formData.creditBack || []).reduce(
+    (sum, d) => sum + parseFloat(d.amount || 0),
+    0
+  );
+
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
       <CardContent className="p-8">
@@ -316,7 +326,7 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
                   Credit Sales Total
                 </div>
                 <div className="text-xl font-semibold text-gray-700 mt-2">
-                  ₹{formatINR(sales.creditSalesTotal)}
+                  ₹{formatINR(creditSalesTotal)}
                 </div>
               </div>
               <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
@@ -324,7 +334,7 @@ const ReviewForm = ({ formData, onNext, onBack }) => {
                   Credit Back Total
                 </div>
                 <div className="text-xl font-semibold text-gray-700 mt-2">
-                  ₹{formatINR(sales.creditBackTotal)}
+                  ₹{formatINR(creditBackTotal)}
                 </div>
               </div>
             </div>

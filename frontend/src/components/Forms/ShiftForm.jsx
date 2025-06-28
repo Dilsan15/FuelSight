@@ -179,6 +179,95 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
           Shift Details
         </h2>
 
+        {/* Day Rates and Fuel Testing/Calibration */}
+        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
+          <h3 className="text-2xl font-bold text-gray-900">
+            Applicable Day Rates (₹/L) & Fuel Testing/Calibration
+          </h3>
+    
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {fuelTypes.map((fuel) => (
+              <div key={fuel} className="space-y-6 bg-gray-50 p-6 rounded-xl border border-gray-200">
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold text-gray-700">
+                    {fuel} Day Rate (₹/L) *
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.dayRate?.[fuel] ?? ""}
+                    onChange={(e) => {
+                      const updatedShift = {
+                        ...formData,
+                        dayRate: {
+                          ...formData.dayRate,
+                          [fuel]: getSafeDecimal(e.target.value),
+                        },
+                      };
+                      setFormData(updatedShift);
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value === "" || Number(e.target.value) < 0) {
+                        const updatedShift = {
+                          ...formData,
+                          dayRate: {
+                            ...formData.dayRate,
+                            [fuel]: "0",
+                          },
+                        };
+                        setFormData(updatedShift);
+                      }
+                    }}
+                    className="bg-white border-gray-300 h-11"
+                    placeholder="0.00"
+                  />
+                </div>
+                
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold text-gray-700">
+                    {fuel} Testing Quantity (L)
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={
+                      formData.nozzleTesting?.find((f) => f.fuelType === fuel)
+                        ?.quantity ?? ""
+                    }
+                    onChange={(e) => {
+                      const updated = formData.nozzleTesting.map((entry) =>
+                        entry.fuelType === fuel
+                          ? {
+                              ...entry,
+                              quantity: getSafeDecimal(e.target.value),
+                            }
+                          : entry
+                      );
+                      const updatedShift = { ...formData, nozzleTesting: updated };
+                      setFormData(updatedShift);
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value === "" || Number(e.target.value) < 0) {
+                        const updated = formData.nozzleTesting.map((entry) =>
+                          entry.fuelType === fuel
+                            ? { ...entry, quantity: "0" }
+                            : entry
+                        );
+                        const updatedShift = { ...formData, nozzleTesting: updated };
+                        setFormData(updatedShift);
+                      }
+                    }}
+                    className="bg-white border-gray-300 h-11"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Shift Info */}
         <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -229,115 +318,6 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
               </Select>
             </div>
           </div>
-        </section>
-
-        {/* Day Rates */}
-        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
-          <h3 className="text-2xl font-bold text-gray-900">
-            Applicable Day Rates (₹/L)
-          </h3>
-    
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {fuelTypes.map((fuel) => (
-              <div key={fuel} className="space-y-3">
-                <Label className="text-sm font-semibold text-gray-700">
-                  {fuel} (₹/L) *
-                </Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={formData.dayRate?.[fuel] ?? ""}
-                  onChange={(e) => {
-                    const updatedShift = {
-                      ...formData,
-                      dayRate: {
-                        ...formData.dayRate,
-                        [fuel]: getSafeDecimal(e.target.value),
-                      },
-                    };
-                    setFormData(updatedShift);
-                  }}
-                  onBlur={(e) => {
-                    if (e.target.value === "" || Number(e.target.value) < 0) {
-                      const updatedShift = {
-                        ...formData,
-                        dayRate: {
-                          ...formData.dayRate,
-                          [fuel]: "0",
-                        },
-                      };
-                      setFormData(updatedShift);
-                    }
-                  }}
-                  className="bg-white border-gray-300 h-11"
-                  placeholder="0.00"
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Fuel Testing/Calibration */}
-        <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
-          <h3 className="text-2xl font-bold text-gray-900">
-            Fuel Testing/Calibration
-          </h3>
-          {fuelTypes.map((fuel) => (
-            <div
-              key={fuel}
-              className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-gray-50 p-6 rounded-xl border border-gray-200"
-            >
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold text-gray-700">
-                  Fuel Type *
-                </Label>
-                <Input
-                  value={fuel}
-                  readOnly
-                  className="bg-gray-100 border-gray-300 text-gray-600 cursor-not-allowed h-11"
-                />
-              </div>
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold text-gray-700">
-                  Quantity Used (L)
-                </Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={
-                    formData.nozzleTesting?.find((f) => f.fuelType === fuel)
-                      ?.quantity ?? ""
-                  }
-                  onChange={(e) => {
-                    const updated = formData.nozzleTesting.map((entry) =>
-                      entry.fuelType === fuel
-                        ? {
-                            ...entry,
-                            quantity: getSafeDecimal(e.target.value),
-                          }
-                        : entry
-                    );
-                    const updatedShift = { ...formData, nozzleTesting: updated };
-                    setFormData(updatedShift);
-                  }}
-                  onBlur={(e) => {
-                    if (e.target.value === "" || Number(e.target.value) < 0) {
-                      const updated = formData.nozzleTesting.map((entry) =>
-                        entry.fuelType === fuel
-                          ? { ...entry, quantity: "0" }
-                          : entry
-                      );
-                      const updatedShift = { ...formData, nozzleTesting: updated };
-                      setFormData(updatedShift);
-                    }
-                  }}
-                  className="bg-gray-50 border-gray-300 h-11"
-                />
-              </div>
-            </div>
-          ))}
         </section>
 
         {/* Fuel Readings */}

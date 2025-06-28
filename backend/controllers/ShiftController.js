@@ -86,7 +86,7 @@ const synchronizeUserReadings = async (userId) => {
 
     // Find the most recent date with shifts for this user
     const mostRecentShift = await Shift.findOne({ user: userId })
-      .sort({ shiftDateSubmitted: -1 })
+      .sort({ date: - 1 })
       .lean();
 
     if (!mostRecentShift) {

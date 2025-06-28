@@ -47,11 +47,13 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
   const { user } = useAuthContext();
   const { fetchAccounts } = useDefPayActs();
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [creditSaleSearchQuery, setCreditSaleSearchQuery] = useState("");
+  const [creditBackSearchQuery, setCreditBackSearchQuery] = useState("");
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const debouncedSearch = useDebounce(searchQuery.trim(), 500);
+  const debouncedCreditSaleSearch = useDebounce(creditSaleSearchQuery.trim(), 500);
+  const debouncedCreditBackSearch = useDebounce(creditBackSearchQuery.trim(), 500);
   const [openCreditSalePopoverIndex, setOpenCreditSalePopoverIndex] =
     useState(null);
   const [openCreditBackPopoverIndex, setOpenCreditBackPopoverIndex] =
@@ -64,7 +66,10 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchAccounts(debouncedSearch, 1, 500, "all");
+        const searchQuery = openCreditSalePopoverIndex !== null 
+          ? debouncedCreditSaleSearch 
+          : debouncedCreditBackSearch;
+        const result = await fetchAccounts(searchQuery, 1, 500, "all");
         if (isMounted) {
           setAccounts(result.data || []);
         }
@@ -83,27 +88,49 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
     return () => {
       isMounted = false;
     };
-  }, [debouncedSearch, user?.token]);
+  }, [debouncedCreditSaleSearch, debouncedCreditBackSearch, user?.token, openCreditSalePopoverIndex, openCreditBackPopoverIndex]);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('DefPayForm formData:', formData);
+  }, [formData]);
+
+  // Helper to generate a unique id
+  const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 
   const addCreditSale = () => {
     setFormData(prev => ({
       ...prev,
       creditSales: [
         ...(prev.creditSales || []),
-        { code: "", dueDate: "", description: "", fuelType: "", amount: "" },
+        { id: generateId(), code: "", dueDate: "", description: "", fuelType: "", amount: "" },
       ],
+      creditBack: prev.creditBack || [],
     }));
   };
 
-  const deleteCreditSale = (i) => {
-    const updated = formData.creditSales.filter((_, idx) => idx !== i);
-    setFormData(prev => ({ ...prev, creditSales: updated }));
+  const deleteCreditSale = (id) => {
+    setFormData(prev => {
+      const updated = (prev.creditSales || []).filter(entry => entry.id !== id);
+      return {
+        ...prev,
+        creditSales: updated,
+        creditBack: prev.creditBack || [],
+      };
+    });
   };
 
-  const handleCreditSaleChange = (i, field, value) => {
-    const updated = [...(formData.creditSales || [])];
-    updated[i] = { ...updated[i], [field]: value };
-    setFormData(prev => ({ ...prev, creditSales: updated }));
+  const handleCreditSaleChange = (id, field, value) => {
+    setFormData(prev => {
+      const updated = (prev.creditSales || []).map(entry =>
+        entry.id === id ? { ...entry, [field]: value } : entry
+      );
+      return {
+        ...prev,
+        creditSales: updated,
+        creditBack: prev.creditBack || [],
+      };
+    });
   };
 
   const addCreditBack = () => {
@@ -111,21 +138,44 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
       ...prev,
       creditBack: [
         ...(prev.creditBack || []),
-        { code: "", amount: "", note: "", paymentType: "QR" },
+        { id: generateId(), code: "", amount: "", note: "", paymentType: "QR" },
       ],
+      creditSales: prev.creditSales || [],
     }));
   };
 
-  const deleteCreditBack = (i) => {
-    const updated = formData.creditBack.filter((_, idx) => idx !== i);
-    setFormData(prev => ({ ...prev, creditBack: updated }));
+  const deleteCreditBack = (id) => {
+    setFormData(prev => {
+      const updated = (prev.creditBack || []).filter(entry => entry.id !== id);
+      return {
+        ...prev,
+        creditBack: updated,
+        creditSales: prev.creditSales || [],
+      };
+    });
   };
 
-  const handleCreditBackChange = (i, field, value) => {
-    const updated = [...(formData.creditBack || [])];
-    updated[i] = { ...updated[i], [field]: value };
-    setFormData(prev => ({ ...prev, creditBack: updated }));
+  const handleCreditBackChange = (id, field, value) => {
+    setFormData(prev => {
+      const updated = (prev.creditBack || []).map(entry =>
+        entry.id === id ? { ...entry, [field]: value } : entry
+      );
+      return {
+        ...prev,
+        creditBack: updated,
+        creditSales: prev.creditSales || [],
+      };
+    });
   };
+
+  const creditSalesTotal = (formData.creditSales || []).reduce(
+    (sum, d) => sum + parseFloat(d.amount || 0),
+    0
+  );
+  const creditBackTotal = (formData.creditBack || []).reduce(
+    (sum, d) => sum + parseFloat(d.amount || 0),
+    0
+  );
 
   return (
     <Card className="bg-white border border-gray-200 shadow-md rounded-lg">
@@ -134,11 +184,11 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
           <h2 className="text-2xl font-semibold text-gray-900">
             Credit Sale Entries
           </h2>
-          {(formData.creditSales || []).map((d, i) => {
+          {(formData.creditSales || []).map((d) => {
             const selected = accounts.find((acc) => acc.code === d.code);
             return (
               <div
-                key={i}
+                key={d.id}
                 className="bg-white border border-gray-200 shadow-sm rounded-lg p-6 space-y-6"
               >
                 <div className="grid grid-cols-1 gap-6">
@@ -147,9 +197,9 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                       Account Code *
                     </Label>
                     <Popover
-                      open={openCreditSalePopoverIndex === i}
+                      open={openCreditSalePopoverIndex === d.id}
                       onOpenChange={(open) =>
-                        setOpenCreditSalePopoverIndex(open ? i : null)
+                        setOpenCreditSalePopoverIndex(open ? d.id : null)
                       }
                     >
                       <PopoverTrigger asChild>
@@ -168,8 +218,8 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                         <Command>
                           <CommandInput
                             placeholder="Search by name, code, or address"
-                            value={searchQuery}
-                            onValueChange={setSearchQuery}
+                            value={creditSaleSearchQuery}
+                            onValueChange={setCreditSaleSearchQuery}
                           />
                           {loading ? (
                             <div className="p-4 text-sm text-gray-500 text-center">
@@ -190,7 +240,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                                   key={acc.code}
                                   value={`${acc.code} ${acc.firstName} ${acc.lastName} ${acc.address}`}
                                   onSelect={() => {
-                                    handleCreditSaleChange(i, "code", acc.code);
+                                    handleCreditSaleChange(d.id, "code", acc.code);
                                     setOpenCreditSalePopoverIndex(null);
                                   }}
                                 >
@@ -221,7 +271,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                         type="date"
                         value={d.dueDate}
                         onChange={(e) =>
-                          handleCreditSaleChange(i, "dueDate", e.target.value)
+                          handleCreditSaleChange(d.id, "dueDate", e.target.value)
                         }
                         className="bg-gray-50 border-gray-300"
                         placeholder="Leave empty for 15 days default"
@@ -233,7 +283,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                       <Select
                         value={d.fuelType}
                         onValueChange={(val) =>
-                          handleCreditSaleChange(i, "fuelType", val)
+                          handleCreditSaleChange(d.id, "fuelType", val)
                         }
                       >
                         <SelectTrigger className="bg-gray-50 border-gray-300">
@@ -259,25 +309,18 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                         type="text"
                         inputMode="decimal"
                         step="0.01"
-                        value={formatCurrencyInput(d.amount || "")}
+                        value={d.amount || ""}
                         onChange={(e) => {
                           const raw = e.target.value.replace(/,/g, "");
+                          console.log('Credit Sale Amount Input:', { raw, processed: getSafeDecimal(raw) });
                           handleCreditSaleChange(
-                            i,
+                            d.id,
                             "amount",
                             getSafeDecimal(raw)
                           );
                         }}
-                        onBlur={(e) => {
-                          const raw = e.target.value.replace(/,/g, "");
-                          if (
-                            raw === "" ||
-                            Number(raw) < 0
-                          ) {
-                            handleCreditSaleChange(i, "amount", "0");
-                          }
-                        }}
                         className="bg-gray-50 border-gray-300"
+                        placeholder="Enter amount"
                       />
                     </div>
 
@@ -301,7 +344,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                     <Textarea
                       value={d.description}
                       onChange={(e) =>
-                        handleCreditSaleChange(i, "description", e.target.value)
+                        handleCreditSaleChange(d.id, "description", e.target.value)
                       }
                       className="bg-gray-50 border-gray-300"
                     />
@@ -310,7 +353,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                   <div className="flex justify-end">
                     <Button
                       variant="destructive"
-                      onClick={() => deleteCreditSale(i)}
+                      onClick={() => deleteCreditSale(d.id)}
                     >
                       Delete Credit Sale
                     </Button>
@@ -332,11 +375,11 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
           <h2 className="text-2xl font-semibold text-gray-900">
             Credit Back Entries
           </h2>
-          {(formData.creditBack || []).map((p, i) => {
+          {(formData.creditBack || []).map((p) => {
             const selected = accounts.find((acc) => acc.code === p.code);
             return (
               <div
-                key={i}
+                key={p.id}
                 className="bg-white border border-gray-200 shadow-sm rounded-lg p-6 space-y-6"
               >
                 <div className="grid grid-cols-1 gap-6">
@@ -345,9 +388,9 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                       Account Code *
                     </Label>
                     <Popover
-                      open={openCreditBackPopoverIndex === i}
+                      open={openCreditBackPopoverIndex === p.id}
                       onOpenChange={(open) =>
-                        setOpenCreditBackPopoverIndex(open ? i : null)
+                        setOpenCreditBackPopoverIndex(open ? p.id : null)
                       }
                     >
                       <PopoverTrigger asChild>
@@ -366,8 +409,8 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                         <Command>
                           <CommandInput
                             placeholder="Search by name, code, or address"
-                            value={searchQuery}
-                            onValueChange={setSearchQuery}
+                            value={creditBackSearchQuery}
+                            onValueChange={setCreditBackSearchQuery}
                           />
                           {loading ? (
                             <div className="p-4 text-sm text-gray-500 text-center">
@@ -388,7 +431,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                                   key={acc.code}
                                   value={`${acc.code} ${acc.firstName} ${acc.lastName} ${acc.address}`}
                                   onSelect={() => {
-                                    handleCreditBackChange(i, "code", acc.code);
+                                    handleCreditBackChange(p.id, "code", acc.code);
                                     setOpenCreditBackPopoverIndex(null);
                                   }}
                                 >
@@ -417,7 +460,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                       <RadioGroup
                         value={p.paymentType}
                         onValueChange={(val) =>
-                          handleCreditBackChange(i, "paymentType", val)
+                          handleCreditBackChange(p.id, "paymentType", val)
                         }
                         className="flex gap-6"
                       >
@@ -428,10 +471,10 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                           >
                             <RadioGroupItem
                               value={method}
-                              id={`payment-${i}-${method}`}
+                              id={`payment-${p.id}-${method}`}
                             />
                             <Label
-                              htmlFor={`payment-${i}-${method}`}
+                              htmlFor={`payment-${p.id}-${method}`}
                               className="text-sm text-gray-800"
                             >
                               {method}
@@ -446,25 +489,18 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                         type="text"
                         inputMode="decimal"
                         step="0.01"
-                        value={formatCurrencyInput(p.amount || "")}
+                        value={p.amount || ""}
                         onChange={(e) => {
                           const raw = e.target.value.replace(/,/g, "");
+                          console.log('Credit Back Amount Input:', { raw, processed: getSafeDecimal(raw) });
                           handleCreditBackChange(
-                            i,
+                            p.id,
                             "amount",
                             getSafeDecimal(raw)
                           );
                         }}
-                        onBlur={(e) => {
-                          const raw = e.target.value.replace(/,/g, "");
-                          if (
-                            raw === "" ||
-                            Number(raw) < 0
-                          ) {
-                            handleCreditBackChange(i, "amount", "0");
-                          }
-                        }}
                         className="bg-gray-50 border-gray-300"
+                        placeholder="Enter amount"
                       />
                     </div>
                   </div>
@@ -473,7 +509,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                     <Textarea
                       value={p.note}
                       onChange={(e) =>
-                        handleCreditBackChange(i, "note", e.target.value)
+                        handleCreditBackChange(p.id, "note", e.target.value)
                       }
                       className="bg-gray-50 border-gray-300"
                     />
@@ -481,7 +517,7 @@ const DefPayForm = ({ formData, setFormData, onNext, onBack }) => {
                   <div className="flex justify-end">
                     <Button
                       variant="destructive"
-                      onClick={() => deleteCreditBack(i)}
+                      onClick={() => deleteCreditBack(p.id)}
                     >
                       Delete Credit Back
                     </Button>

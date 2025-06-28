@@ -201,105 +201,132 @@ const AdminAccountSummaryPage = () => {
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[600px] pr-4">
-            {account.paymentHistory?.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="text-left p-3 font-medium text-gray-600">Type</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Code</th>
-                      <th className="text-right p-3 font-medium text-gray-600">Amount</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Fuel/Payment</th>
-                      <th className="text-right p-3 font-medium text-gray-600">Quantity</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Shift Date</th>
-                      <th className="text-left p-3 font-medium text-gray-600">DU</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Date</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Submitted By</th>
-                      <th className="text-center p-3 font-medium text-gray-600">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {account.paymentHistory.map((entry, i) => {
-                      const order = entry.defPayOrder;
-                      if (!order) return null;
+            <div className="space-y-4">
+              {account.paymentHistory?.length > 0 ? (
+                account.paymentHistory.map((entry, i) => {
+                  const order = entry.defPayOrder;
+                  if (!order) return null;
 
-                      return (
-                        <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
-                          <td className="p-3">
+                  return (
+                    <Card key={i} className="bg-white border">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
                             <Badge
-                              variant={order.type === "creditSale" ? "secondary" : "default"}
-                              className="text-xs"
+                              variant={
+                                order.type === "creditSale"
+                                  ? "secondary"
+                                  : "default"
+                              }
                             >
-                              {order.type === "creditSale" ? "Credit Sale" : "Credit Back"}
+                              {order.type === "creditSale"
+                                ? "Credit Sale"
+                                : "Credit Back"}
                             </Badge>
-                          </td>
-                          <td className="p-3">
-                            <span className="font-mono text-sm">{order.code}</span>
-                          </td>
-                          <td className="p-3 text-right font-medium">
-                            ₹{order.amount?.toFixed(2) || "0.00"}
-                          </td>
-                          <td className="p-3">
-                            {order.type === "creditSale" 
-                              ? order.fuelType || "N/A"
-                              : order.paymentType || "N/A"
+                            <span className="font-mono">{order.code}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              navigate(`/order-summary/${order._id}`)
                             }
-                          </td>
-                          <td className="p-3 text-right">
-                            {order.type === "creditSale" && order.quantity 
-                              ? `${order.quantity} L` 
-                              : "-"
-                            }
-                          </td>
-                          <td className="p-3">
-                            <div className="text-sm">
-                              {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "N/A"}
+                          >
+                            View Details
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <div className="text-muted-foreground">Amount</div>
+                            <div className="font-medium">
+                              ₹{order.amount?.toFixed(2) || "0.00"}
                             </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="text-sm">
-                              {order.user?.stationName || "N/A"}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="text-sm">
-                              {entry.date ? new Date(entry.date).toLocaleDateString() : "N/A"}
-                            </div>
-                            {order.type === "creditSale" && order.dueDate && (
-                              <div className="text-xs text-gray-500">
-                                Due: {new Date(order.dueDate).toLocaleDateString()}
+                          </div>
+
+                          {order.type === "creditSale" && (
+                            <>
+                              {order.fuelType && (
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    Fuel Type
+                                  </div>
+                                  <div className="font-medium">
+                                    {order.fuelType}
+                                  </div>
+                                </div>
+                              )}
+                              <div>
+                                <div className="text-muted-foreground">
+                                  Quantity
+                                </div>
+                                <div className="font-medium">
+                                  {order.quantity} L
+                                </div>
                               </div>
-                            )}
-                          </td>
-                          <td className="p-3">
-                            <div className="text-sm">{order.submittedByName}</div>
-                            {order.description && (
-                              <div className="text-xs text-gray-500 max-w-32 truncate" title={order.description}>
+                              {order.dueDate && (
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    Due Date
+                                  </div>
+                                  <div className="font-medium">
+                                    {new Date(order.dueDate).toLocaleDateString()}
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          {order.type === "creditBack" && order.paymentType && (
+                            <div>
+                              <div className="text-muted-foreground">
+                                Payment Type
+                              </div>
+                              <div className="font-medium">
+                                {order.paymentType}
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="text-muted-foreground">Date</div>
+                            <div className="font-medium">
+                              {entry.date
+                                ? new Date(entry.date).toLocaleDateString()
+                                : "N/A"}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-muted-foreground">
+                              Submitted By
+                            </div>
+                            <div className="font-medium">
+                              {order.submittedByName}
+                            </div>
+                          </div>
+
+                          {order.description && (
+                            <div className="col-span-full">
+                              <div className="text-muted-foreground">
+                                Description
+                              </div>
+                              <div className="font-medium">
                                 {order.description}
                               </div>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs px-2 py-1"
-                              onClick={() => navigate(`/order-summary/${order._id}`)}
-                            >
-                              View
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No transaction history available.
-              </div>
-            )}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No transaction history available.
+                </div>
+              )}
+            </div>
           </ScrollArea>
         </CardContent>
       </Card>

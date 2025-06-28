@@ -35,24 +35,9 @@ const SalesForm = ({
     // Don't force any values - let them stay empty if user wants
   };
 
-  useEffect(() => {
-    const creditSalesTotal = (creditSales || []).reduce((sum, d) => {
-      return sum + parseFloat(d.amount || 0);
-    }, 0);
-
-    const creditBackTotal = (creditBack || []).reduce((sum, p) => {
-      return sum + parseFloat(p.amount || 0);
-    }, 0);
-
-    setFormData(prev => ({
-      ...prev,
-      sales: {
-        ...prev.sales,
-        creditSalesTotal: creditSalesTotal.toFixed(2),
-        creditBackTotal: creditBackTotal.toFixed(2),
-      },
-    }));
-  }, [creditSales, creditBack]);
+  // Calculate totals directly from props
+  const creditSalesTotal = (creditSales || []).reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+  const creditBackTotal = (creditBack || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
@@ -62,7 +47,8 @@ const SalesForm = ({
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-3">
+          {/* Left column: Main payment inputs */}
+          <div className="space-y-1">
             <Label className="text-sm font-semibold text-gray-700">
               Cash with Manager (₹) *
             </Label>
@@ -76,9 +62,7 @@ const SalesForm = ({
               placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
-          </div>
 
-          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
               QR Transfer (₹) *
             </Label>
@@ -92,9 +76,7 @@ const SalesForm = ({
               placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
-          </div>
 
-          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
               Card (₹) *
             </Label>
@@ -108,9 +90,7 @@ const SalesForm = ({
               placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11"
             />
-          </div>
 
-          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
               Cheques (₹) *
             </Label>
@@ -126,7 +106,8 @@ const SalesForm = ({
             />
           </div>
 
-          <div className="space-y-3">
+          {/* Right column: Lost/Stolen, Deferral, Payment */}
+          <div className="space-y-1">
             <Label className="text-sm font-semibold text-red-700">
               Lost or Stolen Cash (₹) *
             </Label>
@@ -140,29 +121,24 @@ const SalesForm = ({
               placeholder="Enter amount"
               className="bg-gray-50 border-gray-300 h-11 border-red-200 focus:border-red-400 focus:ring-red-400"
             />
-          </div>
 
-          {/* Read-Only Totals */}
-          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
               Credit Sales Total (₹)
             </Label>
             <Input
               type="text"
               readOnly
-              value={formatINR(formData.sales?.creditSalesTotal ?? "0")}
+              value={formatINR(creditSalesTotal)}
               className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed h-11"
             />
-          </div>
 
-          <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-700">
               Credit Back Total (₹)
             </Label>
             <Input
               type="text"
               readOnly
-              value={formatINR(formData.sales?.creditBackTotal ?? "0")}
+              value={formatINR(creditBackTotal)}
               className="bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed h-11"
             />
           </div>
