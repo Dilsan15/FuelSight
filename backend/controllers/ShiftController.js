@@ -95,7 +95,7 @@ const synchronizeUserReadings = async (userId) => {
     }
 
     // Get the most recent date
-    const mostRecentDate = new Date(mostRecentShift.shiftDateSubmitted);
+    const mostRecentDate = new Date(mostRecentShift.date);
     const dateStart = new Date(mostRecentDate);
     dateStart.setUTCHours(0, 0, 0, 0);
     const dateEnd = new Date(mostRecentDate);
@@ -104,7 +104,7 @@ const synchronizeUserReadings = async (userId) => {
     // Find all shifts for the most recent date
     const shiftsOnMostRecentDate = await Shift.find({
       user: userId,
-      shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd }
+      date: { $gte: dateStart, $lte: dateEnd }
     }).lean();
 
     if (shiftsOnMostRecentDate.length === 0) {
@@ -112,13 +112,10 @@ const synchronizeUserReadings = async (userId) => {
       return { success: false, error: 'No shifts found for the most recent date', noShifts: true };
     }
 
-    // Prioritize night shift, then day shift
+    // Prefer Night shift, otherwise Day shift
     let latestShift = shiftsOnMostRecentDate.find(shift => shift.timeType === 'Night');
     if (!latestShift) {
-      // If no night shift, find the latest day shift on that date
-      latestShift = shiftsOnMostRecentDate
-        .filter(shift => shift.timeType === 'Day')
-        .sort((a, b) => new Date(b.shiftDateSubmitted) - new Date(a.shiftDateSubmitted))[0];
+      latestShift = shiftsOnMostRecentDate.find(shift => shift.timeType === 'Day');
     }
 
     if (!latestShift || !latestShift.readings) {
@@ -126,7 +123,18 @@ const synchronizeUserReadings = async (userId) => {
       return { success: false, error: 'No readings in latest shift', noShifts: true };
     }
 
-    console.log(`🔄 Synchronizing user readings with ${latestShift.timeType} shift from ${new Date(latestShift.shiftDateSubmitted).toLocaleDateString()}`);
+    // Print out the shift details being used
+    console.log('🔍 Using this shift for synchronization:', {
+      _id: latestShift._id,
+      date: latestShift.date,
+      timeType: latestShift.timeType,
+      submittedByName: latestShift.submittedByName,
+      readings: latestShift.readings,
+      createdAt: latestShift.createdAt,
+      updatedAt: latestShift.updatedAt,
+    });
+
+    console.log(`🔄 Synchronizing user readings with ${latestShift.timeType} shift from ${new Date(latestShift.date).toLocaleDateString()}`);
 
     // Update user readings to match the selected shift's closing readings
     const updatedReadings = user.readings || [];
