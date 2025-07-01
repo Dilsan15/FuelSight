@@ -33,34 +33,32 @@ const createDefPayOrder = async (req, res) => {
       return res.status(400).json({ error: 'Amount must be a valid positive number.' });
     }
 
-    // Validate shift type when shift date is provided
-    if (shiftDate && !shiftType) {
-      return res.status(400).json({ error: 'Shift type is required when shift date is provided.' });
+    // Only require shiftType if linking to a shift (i.e., if shiftDate and a worker account are both present)
+    const isWorkerOrder = !!shiftDate && !!shiftUserId;
+    if (isWorkerOrder && !shiftType) {
+      return res.status(400).json({ error: 'Shift type is required when linking to a shift.' });
     }
 
     let shift = null;
     let orderDate = new Date();
 
-    // Try to find an associated shift using shiftUserId (for admin orders) or userId (for worker orders)
+    // Only link to a shift if both shiftDate and a worker account are present
     if (shiftDate) {
-      // Create date range for the specified date in UTC to avoid timezone issues
-      const targetDate = new Date(shiftDate + 'T00:00:00.000Z');
-      const dateStart = new Date(targetDate);
-      dateStart.setUTCHours(0, 0, 0, 0);
-      const dateEnd = new Date(targetDate);
-      dateEnd.setUTCHours(23, 59, 59, 999);
-
       // Set orderDate to local date to avoid timezone display issues
       orderDate = new Date(shiftDate + 'T12:00:00.000Z'); // Use noon UTC to avoid timezone edge cases
-
-      // Use shiftUserId if provided (for admin orders), otherwise use userId (for worker orders)
-      const userIdForShiftSearch = shiftUserId || userId;
-
-      shift = await Shift.findOne({
-        user: userIdForShiftSearch,
-        shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd },
-        ...(shiftType && { timeType: shiftType })
-      });
+      if (shiftUserId) {
+        // Create date range for the specified date in UTC to avoid timezone issues
+        const targetDate = new Date(shiftDate + 'T00:00:00.000Z');
+        const dateStart = new Date(targetDate);
+        dateStart.setUTCHours(0, 0, 0, 0);
+        const dateEnd = new Date(targetDate);
+        dateEnd.setUTCHours(23, 59, 59, 999);
+        shift = await Shift.findOne({
+          user: shiftUserId,
+          shiftDateSubmitted: { $gte: dateStart, $lte: dateEnd },
+          ...(shiftType && { timeType: shiftType })
+        });
+      }
     }
 
     const account = await DefPayAccount.findById(defPayAccount);

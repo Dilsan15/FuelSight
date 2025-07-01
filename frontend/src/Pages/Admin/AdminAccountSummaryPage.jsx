@@ -211,7 +211,7 @@ const AdminAccountSummaryPage = () => {
             </div>
             <div className="space-y-2">
               {account.paymentHistory?.length > 0 ? (
-                account.paymentHistory.map((entry, i) => {
+                [...account.paymentHistory].reverse().map((entry, i) => {
                   const order = entry.defPayOrder;
                   if (!order) return null;
 

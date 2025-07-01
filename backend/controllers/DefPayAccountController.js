@@ -303,9 +303,31 @@ const synchronizeBalance = async (req, res) => {
   try {
     console.log(`🔄 Starting balance synchronization for account ${id}...`);
 
+
+
     const account = await DefPayAccount.findById(id).populate('paymentHistory.defPayOrder');
     if (!account) {
       return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    // Fix incorrect signs in payment history
+    let hasChanges = false;
+    for (const history of account.paymentHistory) {
+      if (history.defPayOrder.type === "creditSale" && history.amount > 0) {
+        // Credit sales should be negative
+        history.amount = -history.amount;
+        hasChanges = true;
+      } else if (history.defPayOrder.type === "creditBack" && history.amount < 0) {
+        // Credit backs should be positive
+        history.amount = -history.amount;
+        hasChanges = true;
+      }
+    }
+
+    // Save changes if any were made
+    if (hasChanges) {
+      await account.save();
+      console.log(`✅ Fixed incorrect signs in payment history for account ${account.code}`);
     }
 
     // Calculate balance from payment history
@@ -351,6 +373,26 @@ const synchronizeAllBalances = async (req, res) => {
 
     for (const account of accounts) {
       try {
+        // Fix incorrect signs in payment history
+        let hasChanges = false;
+        for (const history of account.paymentHistory) {
+          if (history.defPayOrder.type === "creditSale" && history.amount > 0) {
+            // Credit sales should be negative
+            history.amount = -history.amount;
+            hasChanges = true;
+          } else if (history.defPayOrder.type === "creditBack" && history.amount < 0) {
+            // Credit backs should be positive
+            history.amount = -history.amount;
+            hasChanges = true;
+          }
+        }
+
+        // Save changes if any were made
+        if (hasChanges) {
+          await account.save();
+          console.log(`✅ Fixed incorrect signs in payment history for account ${account.code}`);
+        }
+
         // Calculate balance from payment history
         const calculatedBalance = account.paymentHistory.reduce((sum, entry) => {
           return sum + (entry.amount || 0);

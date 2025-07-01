@@ -249,11 +249,10 @@ export default function AdminCreateOrderForm() {
         amount: Number(form.amount || 0),
         submittedByName: user.username,
         description: form.description || "",
-        // Include shift date and type for worker accounts (required)
-        ...(selectedPump?.role === "worker" && {
-          shiftDate: form.shiftDate,
-          shiftType: form.shiftType
-        }),
+        // Always include shiftDate if present
+        ...(form.shiftDate && { shiftDate: form.shiftDate }),
+        // Include shiftType for worker accounts
+        ...(selectedPump?.role === "worker" && { shiftType: form.shiftType }),
         // Credit sale fields
         ...(form.type === "creditSale" && {
           dueDate: form.dueDate,
@@ -618,17 +617,17 @@ export default function AdminCreateOrderForm() {
           )}
 
           {/* ────────── common fields ────────── */}
-          {selectedPump?.role === "worker" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Shift Date *</Label>
-                <Input
-                  type="date"
-                  value={form.shiftDate}
-                  onChange={(e) => handleChange("shiftDate", e.target.value)}
-                  className="h-11"
-                />
-              </div>
+          <div className={`grid grid-cols-1${selectedPump?.role === "worker" ? " md:grid-cols-2" : ""} gap-4`}>
+            <div>
+              <Label>Shift Date{selectedPump?.role === "worker" ? " *" : " (optional)"}</Label>
+              <Input
+                type="date"
+                value={form.shiftDate}
+                onChange={(e) => handleChange("shiftDate", e.target.value)}
+                className="h-11"
+              />
+            </div>
+            {selectedPump?.role === "worker" && (
               <div>
                 <Label>Shift Type *</Label>
                 <Select
@@ -644,8 +643,8 @@ export default function AdminCreateOrderForm() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-          )}
+            )}
+          </div>
           {selectedPump?.role === "worker" && (
             <div className="text-sm text-muted-foreground">
               Required: Select the shift date and type to link this order to the worker's specific shift.
