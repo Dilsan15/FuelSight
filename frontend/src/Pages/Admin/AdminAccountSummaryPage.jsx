@@ -201,124 +201,63 @@ const AdminAccountSummaryPage = () => {
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[600px] pr-4">
-            <div className="space-y-4">
+            <div className="grid grid-cols-6 gap-6 px-3 py-2 font-semibold text-muted-foreground text-sm border-b bg-gray-50 rounded-t-lg">
+              <div className="col-span-1">Type</div>
+              <div className="col-span-1">Code</div>
+              <div className="col-span-1">Amount</div>
+              <div className="col-span-1">Date</div>
+              <div className="col-span-1">By</div>
+              <div className="col-span-1"></div>
+            </div>
+            <div className="space-y-2">
               {account.paymentHistory?.length > 0 ? (
                 account.paymentHistory.map((entry, i) => {
                   const order = entry.defPayOrder;
                   if (!order) return null;
 
+                  const isCreditSale = order.type === "creditSale";
+                  const badgeClass = isCreditSale
+                    ? "bg-blue-500 text-white border-none rounded-full px-3 py-1 flex items-center gap-1 justify-center text-xs font-bold shadow-sm"
+                    : "bg-green-500 text-white border-none rounded-full px-3 py-1 flex items-center gap-1 justify-center text-xs font-bold shadow-sm";
+                  const badgeIcon = isCreditSale ? (
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0A9 9 0 11 3 12a9 9 0 0118 0z" /></svg>
+                  ) : (
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v8m0 0l-4-4m4 4l4-4" /></svg>
+                  );
+
                   return (
-                    <Card key={i} className="bg-white border">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={
-                                order.type === "creditSale"
-                                  ? "secondary"
-                                  : "default"
-                              }
-                            >
-                              {order.type === "creditSale"
-                                ? "Credit Sale"
-                                : "Credit Back"}
-                            </Badge>
-                            <span className="font-mono">{order.code}</span>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              navigate(`/order-summary/${order._id}`)
-                            }
-                          >
-                            View Details
-                          </Button>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <div className="text-muted-foreground">Amount</div>
-                            <div className="font-medium">
-                              ₹{order.amount?.toFixed(2) || "0.00"}
-                            </div>
-                          </div>
-
-                          {order.type === "creditSale" && (
-                            <>
-                              {order.fuelType && (
-                                <div>
-                                  <div className="text-muted-foreground">
-                                    Fuel Type
-                                  </div>
-                                  <div className="font-medium">
-                                    {order.fuelType}
-                                  </div>
-                                </div>
-                              )}
-                              <div>
-                                <div className="text-muted-foreground">
-                                  Quantity
-                                </div>
-                                <div className="font-medium">
-                                  {order.quantity} L
-                                </div>
-                              </div>
-                              {order.dueDate && (
-                                <div>
-                                  <div className="text-muted-foreground">
-                                    Due Date
-                                  </div>
-                                  <div className="font-medium">
-                                    {new Date(order.dueDate).toLocaleDateString()}
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          {order.type === "creditBack" && order.paymentType && (
-                            <div>
-                              <div className="text-muted-foreground">
-                                Payment Type
-                              </div>
-                              <div className="font-medium">
-                                {order.paymentType}
-                              </div>
-                            </div>
-                          )}
-
-                          <div>
-                            <div className="text-muted-foreground">Date</div>
-                            <div className="font-medium">
-                              {entry.date
-                                ? new Date(entry.date).toLocaleDateString()
-                                : "N/A"}
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="text-muted-foreground">
-                              Submitted By
-                            </div>
-                            <div className="font-medium">
-                              {order.submittedByName}
-                            </div>
-                          </div>
-
-                          {order.description && (
-                            <div className="col-span-full">
-                              <div className="text-muted-foreground">
-                                Description
-                              </div>
-                              <div className="font-medium">
-                                {order.description}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <div
+                      key={i}
+                      className="grid grid-cols-6 gap-6 items-center p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="col-span-1 flex justify-center">
+                        <span className={badgeClass}>
+                          {badgeIcon}
+                          {isCreditSale ? "Credit Sale" : "Credit Back"}
+                        </span>
+                      </div>
+                      <div className="col-span-1 font-mono">{order.code}</div>
+                      <div className="col-span-1 font-medium">
+                        ₹{order.amount?.toFixed(2) || "0.00"}
+                      </div>
+                      <div className="col-span-1">
+                        {order.orderDate
+                          ? new Date(order.orderDate).toLocaleDateString()
+                          : "N/A"}
+                      </div>
+                      <div className="col-span-1">{order.submittedByName}</div>
+                      <div className="col-span-1 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            navigate(`/order-summary/${order._id}`)
+                          }
+                        >
+                          Details
+                        </Button>
+                      </div>
+                    </div>
                   );
                 })
               ) : (
@@ -330,6 +269,11 @@ const AdminAccountSummaryPage = () => {
           </ScrollArea>
         </CardContent>
       </Card>
+      <div className="flex justify-center mt-8">
+        <Button variant="outline" onClick={() => navigate(-1)}>
+          Back
+        </Button>
+      </div>
     </div>
   );
 };
