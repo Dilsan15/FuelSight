@@ -1,8 +1,16 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectTrigger,
@@ -12,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useSynchronizeReadings } from "@/Hooks/ShiftHooks/useSynchronizeReadings";
 import { useAuthContext } from "@/Hooks/AuthHooks/useAuthContext";
+import { useAIUploadShift } from "@/Hooks/ShiftHooks/useAIUploadShift";
 
 import { formatINR } from "@/utils/formatting.js";
 import {
@@ -25,6 +34,10 @@ import {
 const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
   const { syncReadings, syncSingleNozzle, isLoading: isSyncing, syncingNozzles } = useSynchronizeReadings();
   const { user } = useAuthContext();
+  const { uploadAI, isUploadingAI, uploadProgress, currentFile } = useAIUploadShift();
+  const [uploadedImages, setUploadedImages] = useState([]);
+  
+
   
   const fuelTypes = (formData.readings || [])
     .map((r) => r.fuelType)
@@ -172,12 +185,293 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
     }
   };
 
+  const handleAIUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    // Only take the first file (single image mode)
+    const file = files[0];
+    
+    // Store single image for later processing on submit
+    setUploadedImages([file]);
+  };
+
+  const processAIImages = async () => {
+    if (uploadedImages.length === 0) return;
+
+    try {
+
+      
+      // Use server-side processing
+      const result = await uploadAI(uploadedImages);
+      
+      if (result.success && result.extractedData) {
+
+        
+        // Merge the extracted data with existing form data
+        const updatedFormData = { ...formData };
+        
+        // Update readings if found - fill existing boxes, don't create new ones
+        if (result.extractedData.readings?.length > 0) {
+
+          
+          // Create a completely new array with updated readings
+          const updatedReadings = (formData.readings || []).map(existingReading => {
+            // Find matching AI reading for this existing reading
+            const matchingAIReading = result.extractedData.readings.find(aiReading => {
+              const fuelTypeMatch = existingReading.fuelType === aiReading.fuelType;
+              const nozzleMatch = String(existingReading.nozzle) === String(aiReading.nozzle);
+              
+
+              
+              return fuelTypeMatch && nozzleMatch;
+            });
+            
+            if (matchingAIReading) {
+
+              
+              return {
+                ...existingReading,
+                opening: matchingAIReading.opening || existingReading.opening,
+                closing: matchingAIReading.closing || existingReading.closing
+              };
+            }
+            
+            // No AI data found, return existing reading unchanged
+            return existingReading;
+          });
+          
+
+          updatedFormData.readings = updatedReadings;
+        }
+        
+
+        
+        // Update lube sales if found - create cards for AI extracted data
+        if (result.extractedData.lubeSales?.length > 0) {
+
+          
+          const updatedLubeSales = [...(formData.lubeSales || [])];
+          
+          // For each AI-extracted lube sale, either update existing or create new
+          result.extractedData.lubeSales.forEach((aiLube, index) => {
+            if (index < updatedLubeSales.length) {
+              // Update existing lube sale entry
+              updatedLubeSales[index] = {
+                description: aiLube.description || updatedLubeSales[index].description,
+                amount: aiLube.amount || updatedLubeSales[index].amount,
+                quantity: aiLube.quantity || updatedLubeSales[index].quantity
+              };
+
+            } else {
+              // Create new lube sale entry
+              updatedLubeSales.push({
+                description: aiLube.description || "",
+                amount: aiLube.amount || "",
+                quantity: aiLube.quantity || "0"
+              });
+
+            }
+          });
+          
+
+          updatedFormData.lubeSales = updatedLubeSales;
+        }
+        
+        // Update nozzle testing if found - fill existing boxes, don't create new ones
+        if (result.extractedData.nozzleTesting?.length > 0) {
+          const updatedNozzleTesting = [...(formData.nozzleTesting || [])];
+          
+          // For each AI-extracted nozzle test, find and update the matching existing entry
+          result.extractedData.nozzleTesting.forEach(aiTest => {
+            const existingIndex = updatedNozzleTesting.findIndex(
+              existing => existing.fuelType === aiTest.fuelType
+            );
+            
+            if (existingIndex !== -1) {
+              // Update existing nozzle testing entry
+              updatedNozzleTesting[existingIndex] = {
+                ...updatedNozzleTesting[existingIndex],
+                quantity: aiTest.quantity || updatedNozzleTesting[existingIndex].quantity
+              };
+
+            } else {
+
+            }
+          });
+          
+          updatedFormData.nozzleTesting = updatedNozzleTesting;
+        }
+        
+        // Apply the updated form data
+
+        
+        // Make sure we preserve the entire structure that setFormData expects
+        setFormData(updatedFormData);
+        
+
+        
+        // Clear uploaded images after processing
+        setUploadedImages([]);
+      }
+      
+    } catch (error) {
+
+      throw error; // Re-throw to handle in onNext
+    }
+  };
+
   return (
     <Card className="bg-gradient-to-br from-white to-gray-50/50 shadow-xl border border-gray-200">
       <CardContent className="p-8 space-y-10">
-        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
-          Shift Details
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+            Shift Details
+          </h2>
+          {/* Enhanced AI Image Upload Button with Dialog */}
+          <div className="flex justify-center sm:justify-end">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button 
+                  disabled={isUploadingAI}
+                  className="relative overflow-hidden bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-bold px-6 py-3 rounded-xl shadow-2xl hover:shadow-purple-500/25 hover:scale-105 transform transition-all duration-300 ease-in-out border-2 border-white/20 backdrop-blur-sm before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-1000 before:ease-in-out w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    <svg className="w-5 h-5 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+                    </svg>
+                    ✨ AI Image Upload
+                  </span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent 
+                className="sm:max-w-[600px]" 
+                onPointerDownOutside={(e) => isUploadingAI && e.preventDefault()} 
+                onEscapeKeyDown={(e) => isUploadingAI && e.preventDefault()}
+              >
+                {/* Custom close button that can be disabled */}
+                <button
+                  className={`absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${isUploadingAI ? 'disabled:pointer-events-none opacity-30' : ''}`}
+                  onClick={() => !isUploadingAI && document.querySelector('[data-dialog-close]')?.click()}
+                  disabled={isUploadingAI}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span className="sr-only">Close</span>
+                </button>
+                
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-2xl">
+                    <svg className="w-6 h-6 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+                    </svg>
+                    ✨ AI Image Upload
+                  </DialogTitle>
+                  <DialogDescription>
+                    {isUploadingAI 
+                      ? "Please wait while AI processes your image. Do not close this dialog."
+                      : "Upload an image of your shift readings and let AI automatically extract and fill in the data for you."
+                    }
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <div className="space-y-6 py-4">
+                  {/* File Upload Area */}
+                  <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isUploadingAI ? 'border-gray-200 bg-gray-50' : 'border-gray-300 hover:border-purple-400'}`}>
+                    <div className="space-y-4">
+                      <div className={`mx-auto w-16 h-16 rounded-full flex items-center justify-center ${isUploadingAI ? 'bg-gray-400' : 'bg-gradient-to-r from-purple-500 to-pink-500'}`}>
+                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className={`text-lg font-medium ${isUploadingAI ? 'text-gray-500' : 'text-gray-900'}`}>
+                          {isUploadingAI ? 'Processing image...' : 'Drop your image here'}
+                        </p>
+                        <p className={`text-sm ${isUploadingAI ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {isUploadingAI ? 'Please wait' : 'or click to browse image'}
+                        </p>
+                        <Input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={handleAIUpload}
+                          disabled={isUploadingAI}
+                          className={isUploadingAI ? 'opacity-50 cursor-not-allowed' : ''}
+                        />
+                      </div>
+                      <p className={`text-xs ${isUploadingAI ? 'text-gray-300' : 'text-gray-400'}`}>
+                        Supports JPG, PNG, GIF, WebP • Single image • Up to 10MB
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* AI Processing Status */}
+                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-purple-200 rounded-lg p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                        <svg className={`w-4 h-4 text-white ${isUploadingAI ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        {isUploadingAI ? (
+                          <>
+                            <p className="font-medium text-gray-900">
+                              Processing images... {uploadProgress}%
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {currentFile ? `Current: ${currentFile}` : 'Extracting text from images'}
+                            </p>
+                            {uploadProgress > 0 && (
+                              <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${uploadProgress}%` }}
+                                ></div>
+                              </div>
+                            )}
+                          </>
+                        ) : uploadedImages.length > 0 ? (
+                          <>
+                            <p className="font-medium text-gray-900">
+                              1 image ready for processing
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Image will be processed when you click Next
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-medium text-gray-900">AI is ready to process your image</p>
+                            <p className="text-sm text-gray-600">Upload an image and click Next to extract readings</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <Button 
+                      disabled={isUploadingAI}
+                      className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed" 
+                      onClick={processAIImages}
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      {isUploadingAI ? 'Processing...' : 'Submit'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+
+        
 
         {/* Day Rates and Fuel Testing/Calibration */}
         <section className="border border-gray-200 bg-white rounded-xl p-8 shadow-sm space-y-8">
@@ -342,7 +636,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                 <h4 className="text-xl font-semibold text-gray-800 border-b border-gray-200 pb-2">
                   {fuel} Nozzles
                 </h4>
-                {entries.map(({ nozzle, opening, closing }) => {
+                {entries.map((reading) => {
+                  const { nozzle, opening, closing } = reading;
                   const nozzleKey = `${fuel}-${nozzle}`;
                   const isSyncingThisNozzle = syncingNozzles.has(nozzleKey);
                   
@@ -368,7 +663,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                             type="number"
                             min={0}
                             step="any"
-                            value={opening}
+                            value={reading.opening || ""}
                             onChange={(e) =>
                               handleReadingChange(
                                 fuel,
@@ -408,7 +703,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                             type="number"
                             min={0}
                             step="any"
-                            value={closing}
+                            value={reading.closing || ""}
                             onChange={(e) =>
                               handleReadingChange(
                                 fuel,
@@ -433,8 +728,8 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                           <Input
                             type="number"
                             value={(() => {
-                              const openingVal = Number(opening) || 0;
-                              const closingVal = Number(closing) || 0;
+                              const openingVal = Number(reading.opening) || 0;
+                              const closingVal = Number(reading.closing) || 0;
                               const volumeSold = closingVal - openingVal;
                               // Only show decimals if the result is not a whole number
                               return volumeSold >= 0 ? 
@@ -555,6 +850,7 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
                   ...(formData.lubeSales || []),
                   { description: "", amount: "", quantity: "0" },
                 ];
+                
                 const updatedShift = { ...formData, lubeSales: updated };
                 setFormData(updatedShift);
               }}
@@ -568,10 +864,22 @@ const ShiftForm = ({ formData = {}, setFormData, onNext, isLoading }) => {
         <div className="pt-4 flex justify-end">
           <Button
             type="button"
-            onClick={onNext}
-            className="h-11 px-6 bg-black text-white hover:bg-gray-800"
+            onClick={async () => {
+              try {
+                // Process AI images first if any are uploaded
+                if (uploadedImages.length > 0) {
+                  await processAIImages();
+                }
+                // Then proceed to next step
+                onNext();
+              } catch (error) {
+                alert(`AI processing failed: ${error.error || error.message || 'Unknown error'}`);
+              }
+            }}
+            disabled={isLoading || isUploadingAI}
+            className="h-11 px-6 bg-black text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Next
+            {isUploadingAI ? 'Processing AI Images...' : 'Next'}
           </Button>
         </div>
       </CardContent>

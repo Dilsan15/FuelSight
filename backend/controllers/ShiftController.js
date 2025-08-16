@@ -4,6 +4,7 @@ const DefPayAccount = require('../models/DefPayAccountModel');
 const User = require("../models/UserModel");
 const { withTransactionRetry } = require('../utils/transactionHelper');
 const { roundHalfUp, toSafeNumber, safeAdd, safeSubtract, safeMultiply } = require('../utils/numberUtils');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const getDefaultDueDate = () => {
   return new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
@@ -736,11 +737,207 @@ const synchronizeReadings = async (req, res) => {
   }
 };
 
+
+// AI Upload Shift
+const aiUploadShift = async (req, res) => {
+  try {
+    console.log('🤖 Starting AI image processing...');
+
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No image provided'
+      });
+    }
+
+    console.log(`📁 Received 1 file for AI processing: ${req.file.originalname}`);
+
+    // Get user's existing readings for context
+    const userId = req.body.userId || req.user._id;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const existingReadings = user.readings || [];
+    // Extract unique fuel types from user's readings
+    const userFuelTypes = [...new Set(existingReadings.map(r => r.fuelType))];
+    const fuelTypesString = userFuelTypes.length > 0
+      ? userFuelTypes.join('|')
+      : 'HSD|MSD|XG'; // Default fallback
+
+    console.log(`⛽ User's fuel types: [${userFuelTypes.join(', ')}]`);
+
+    // Import Google AI at the top of function to avoid module loading issues
+    const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+    // Initialize Gemini AI
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+
+    const extractedData = {
+      readings: [],
+      lubeSales: [],
+      nozzleTesting: []
+    };
+
+    // Process the uploaded image
+    const file = req.file;
+
+
+    try {
+      // Convert buffer to base64
+      const imageBase64 = file.buffer.toString('base64');
+
+      // Create context about existing readings
+      const expectedNozzles = existingReadings.length;
+      const existingReadingsContext = existingReadings.length > 0
+        ? `\n\nIMPORTANT CONTEXT - User's Current Readings (EXPECT ${expectedNozzles} NOZZLES):\n${existingReadings.map(r =>
+          `${r.fuelType} Nozzle ${r.nozzle}: Current reading is ${r.closing}`
+        ).join('\n')}\n\nCRITICAL: This user has ${expectedNozzles} nozzles total. You MUST find all ${expectedNozzles} nozzles in the image.\n\nWhen you see readings in the image:\n- The "opening" reading should typically match or be close to the current readings above\n- The "closing" reading should be the new/higher value shown in the image\n- If you see only one number per nozzle, it's likely the closing reading\n- Use the context above to determine which numbers are opening vs closing`
+        : `\n\nNote: This user has no previous readings, so opening readings will likely be 0 or the first values you see.`;
+
+      // Create the prompt for Gemini
+      const prompt = `
+          You are an AI assistant that extracts data from petrol pump shift reading images. 
+          Please analyze this image and extract the following information in JSON format:
+
+          IMPORTANT: This user only deals with these specific fuel types: ${userFuelTypes.join(', ')}
+          Only look for readings related to these fuel types, ignore any others.
+
+          CRITICAL: We have multiple different readings in the image. Each reading needs it own reading object in the JSON.
+
+          {
+            "readings": [
+              {
+                "fuelType": "${fuelTypesString}",
+                "nozzle": "nozzle_number",
+                "opening": "opening_reading_number",
+                "closing": "closing_reading_number"
+              }
+            ],
+            "lubeSales": [
+              {
+                "description": "product_name",
+                "amount": "price_in_rupees",
+                "quantity": "quantity_in_liters"
+              }
+            ],
+            "nozzleTesting": [
+              {
+                "fuelType": "${fuelTypesString}",
+                "quantity": "test_quantity"
+              }
+            ]
+          }
+
+          ${existingReadingsContext}
+
+          Instructions:
+          - ONLY extract readings for these fuel types: ${userFuelTypes.join(', ')}
+          - SCAN THE ENTIRE IMAGE: Look for ALL nozzles, not just the first few you see
+          - Extract ALL visible nozzle readings (opening and closing values) with nozzle numbers
+          - Look for patterns like "Nozzle 1", "N1", "Pump 1", or just numbers "1", "2", "3", "4"
+          - Check different sections of the image - nozzles might be in rows, columns, or scattered
+          - Use the existing readings context above to intelligently determine opening vs closing values
+          - Find any lube oil sales or product sales
+          - Identify fuel testing/calibration quantities (they often not be explicitly mentioned and be a subtraction off of net instead)
+          - Only include data that is clearly visible in the image
+          - Use numbers without currency symbols
+          - If no data is found for a section, return empty array or object
+          - Be accurate with the numbers you extract
+          - For readings: opening should be <= closing, and closing should be >= opening
+          - DOUBLE CHECK: Make sure you found all nozzles before responding
+
+          Please respond with only the JSON data, no additional text.
+        `;
+
+      // Prepare the image for Gemini
+      const imagePart = {
+        inlineData: {
+          data: imageBase64,
+          mimeType: file.mimetype
+        }
+      };
+
+      // Send to Gemini
+      console.log(`🧠 Sending ${file.originalname} to Gemini for analysis...`);
+      const result = await model.generateContent([prompt, imagePart]);
+      const response = await result.response;
+      const text = response.text();
+
+      console.log(`📝 Raw Gemini response for ${file.originalname}:`, text);
+
+      // Parse the JSON response
+      let parsedData;
+      try {
+        // Clean the response text (remove markdown formatting if present)
+        const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+        parsedData = JSON.parse(cleanedText);
+
+      } catch (parseError) {
+        console.error(`❌ Failed to parse JSON from ${file.originalname}:`, parseError);
+        console.log('Raw text that failed to parse:', text);
+        throw new Error(`Failed to parse AI response: ${parseError.message}`);
+      }
+
+      // Set the extracted data directly (no need to merge since it's single image)
+      if (parsedData.readings && Array.isArray(parsedData.readings)) {
+        extractedData.readings = parsedData.readings;
+
+      } else {
+
+      }
+
+      if (parsedData.lubeSales && Array.isArray(parsedData.lubeSales)) {
+        extractedData.lubeSales = parsedData.lubeSales;
+
+      }
+
+      if (parsedData.nozzleTesting && Array.isArray(parsedData.nozzleTesting)) {
+        extractedData.nozzleTesting = parsedData.nozzleTesting;
+
+      }
+
+    } catch (fileError) {
+      console.error(`❌ Error processing ${file.originalname}:`, fileError);
+      throw fileError;
+    }
+
+
+
+    // Return the extracted data
+    res.status(200).json({
+      success: true,
+      message: `Successfully processed 1 image with Gemini AI`,
+      extractedData,
+      processedFiles: 1
+    });
+
+  } catch (error) {
+    console.error('❌ AI upload error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process images with AI',
+      details: error.message
+    });
+  }
+};
+
+
+
+
 module.exports = {
   submitShift,
   updateShift,
   deleteShift,
   getShifts,
   getShift,
-  synchronizeReadings
+  synchronizeReadings,
+  aiUploadShift
 };
