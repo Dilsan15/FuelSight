@@ -1,11 +1,3 @@
-import axios from "axios";
+import { createApi } from "./createApi";
 
-const defPayOrderAPI = axios.create({
-  baseURL: "https://petrol-pump-accounting.onrender.com/api/defpayorders",
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-
-
-export default defPayOrderAPI;
+export default createApi("/api/defpayorders");

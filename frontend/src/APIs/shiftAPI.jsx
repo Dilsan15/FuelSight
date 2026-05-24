@@ -1,6 +1,3 @@
-import axios from "axios";
+import { createApi } from "./createApi";
 
-export default axios.create({
-  baseURL: "https://petrol-pump-accounting.onrender.com/api/shifts",
-});
-
+export default createApi("/api/shifts");

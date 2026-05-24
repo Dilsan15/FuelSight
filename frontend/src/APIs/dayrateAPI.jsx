@@ -1,7 +1,3 @@
-import axios from "axios";
+import { createApi } from "./createApi";
 
-const dayrateAPI = axios.create({
-  baseURL: "https://petrol-pump-accounting.onrender.com/api/dayrates",
-});
-
-export default dayrateAPI;
+export default createApi("/api/dayrates");
