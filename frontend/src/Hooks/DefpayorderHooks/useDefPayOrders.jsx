@@ -5,7 +5,7 @@
   export const useDefPayOrders = () => {
     const { user } = useAuthContext();
 
-    const fetchOrders = async (search = '', page = 1, limit = 10) => {
+    const fetchOrders = async (search = '', page = 1, limit = 10, type = '') => {
       if (!user?.token) {
         throw new Error('User token is missing.');
       }
@@ -15,7 +15,8 @@
           params: {
             search: search.trim(),
             page: Number(page),
-            limit: Number(limit)
+            limit: Number(limit),
+            ...(type ? { type } : {})
           },
           headers: {
             Authorization: `Bearer ${user.token}`

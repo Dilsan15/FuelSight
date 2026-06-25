@@ -89,9 +89,8 @@ const AdminOrdersPage = () => {
       }
 
       const query = keywords.filter(Boolean).join(" ");
-      const res = await fetchOrders(query, page);
-      const filtered = res.data.filter((o) => o.type === activeTab);
-      setOrders(filtered);
+      const res = await fetchOrders(query, page, 10, activeTab);
+      setOrders(res.data || []);
       setHasMore(res.hasMore);
     } catch (err) {
       console.error(err);
@@ -114,12 +113,13 @@ const AdminOrdersPage = () => {
     return activeTab === "creditSale" ? (
       <>
         <Select
-          onValueChange={(val) =>
+          onValueChange={(val) => {
+            setPage(1);
             setFilter((prev) => ({
               ...prev,
               fuelType: val === "All" ? "" : val,
-            }))
-          }
+            }));
+          }}
         >
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Fuel Type" />
@@ -134,12 +134,13 @@ const AdminOrdersPage = () => {
         </Select>
 
         <Select
-          onValueChange={(val) =>
+          onValueChange={(val) => {
+            setPage(1);
             setFilter((prev) => ({
               ...prev,
               dueInDays: val === "All" ? "" : val,
-            }))
-          }
+            }));
+          }}
         >
           <SelectTrigger className="w-[170px]">
             <SelectValue placeholder="Due in (days)" />
@@ -155,12 +156,13 @@ const AdminOrdersPage = () => {
       </>
     ) : (
       <Select
-        onValueChange={(val) =>
+        onValueChange={(val) => {
+          setPage(1);
           setFilter((prev) => ({
             ...prev,
             paymentType: val === "All" ? "" : val,
-          }))
-        }
+          }));
+        }}
       >
         <SelectTrigger className="w-[180px]">
           <SelectValue placeholder="Payment Type" />
@@ -336,7 +338,10 @@ const AdminOrdersPage = () => {
                 <Input
                   placeholder="Search by code, name, or submitter..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
                   className="w-[240px]"
                 />
                 {renderFilters()}

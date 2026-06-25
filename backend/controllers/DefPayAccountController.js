@@ -194,7 +194,9 @@ const getDefPayAccounts = async (req, res) => {
     switch (searchBy) {
       case 'name': return ['firstName', 'lastName'];
       case 'code': return ['code'];
-      case 'phone': return ['phoneNumber'];
+      case 'phone':
+      case 'phoneNumber':
+        return ['phoneNumber'];
       case 'address': return ['address'];
       case 'all':
       default: return ['firstName', 'lastName', 'code', 'phoneNumber', 'address'];
@@ -219,20 +221,45 @@ const getDefPayAccounts = async (req, res) => {
   }
 
   try {
-    const total = await DefPayAccount.countDocuments(query);
-    const accounts = await DefPayAccount.find(query)
-      .populate('paymentHistory.defPayOrder')
-      .sort({ [sortBy]: order })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    const [accounts, statsResult] = await Promise.all([
+      DefPayAccount.find(query)
+        .select('-paymentHistory')
+        .sort({ [sortBy]: order })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      DefPayAccount.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            totalOutstanding: { $sum: '$balance' },
+            activeCount: {
+              $sum: { $cond: [{ $gt: ['$balance', 0] }, 1, 0] }
+            },
+            count: { $sum: 1 }
+          }
+        }
+      ])
+    ]);
 
+    const stats = statsResult[0] || {
+      totalOutstanding: 0,
+      activeCount: 0,
+      count: 0
+    };
+    const total = stats.count;
     const hasMore = page * limit < total;
 
     res.status(200).json({
       data: accounts,
       total,
       page,
-      hasMore
+      hasMore,
+      stats: {
+        totalOutstanding: stats.totalOutstanding,
+        activeCount: stats.activeCount,
+        averageBalance: total > 0 ? stats.totalOutstanding / total : 0
+      }
     });
   } catch (err) {
     console.error('Fetch error:', err);

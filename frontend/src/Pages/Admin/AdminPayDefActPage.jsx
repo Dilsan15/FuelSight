@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,9 +40,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDefPayActs } from "@/Hooks/DefpayactHooks/useDefPayActs";
 import { useDeleteDefPayAct } from "@/Hooks/DefpayactHooks/useDeleteDefPayAct";
-import { useDefPayAct } from "@/Hooks/DefpayactHooks/useDefPayAct";
 
 const ITEMS_PER_PAGE = 10;
+
+const useDebounce = (value, delay) => {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debounced;
+};
+
 const AdminPayDefActPage = () => {
   const { fetchAccounts } = useDefPayActs();
   const { deleteAccount } = useDeleteDefPayAct();
@@ -52,36 +61,52 @@ const AdminPayDefActPage = () => {
   const [searchBy, setSearchBy] = useState("all");
   const [sortBy, setSortBy] = useState("createdAt");
   const [order, setOrder] = useState("desc");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [page, setPage] = useState(1);
-  const [allAccounts, setAllAccounts] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState({
+    totalOutstanding: 0,
+    activeCount: 0,
+    averageBalance: 0,
+  });
+
+  const debouncedSearch = useDebounce(search, 300);
+
+  const loadAccounts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetchAccounts(
+        debouncedSearch,
+        page,
+        ITEMS_PER_PAGE,
+        searchBy,
+        sortBy,
+        order
+      );
+      setAccounts(response.data || []);
+      setTotal(response.total || 0);
+      setStats(
+        response.stats || {
+          totalOutstanding: 0,
+          activeCount: 0,
+          averageBalance: 0,
+        }
+      );
+    } catch (err) {
+      setError(err.error || "Failed to load accounts.");
+      console.error("Error loading accounts:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadAllAccounts = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetchAccounts(
-          search,
-          1,
-          1000,
-          searchBy,
-          sortBy,
-          order
-        );
-        setAllAccounts(response.data || []);
-      } catch (err) {
-        setError(err.error || "Failed to load accounts.");
-
-        console.error("Error loading accounts:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadAllAccounts();
-  }, [search, searchBy, sortBy, order]);
+    loadAccounts();
+  }, [debouncedSearch, searchBy, sortBy, order, page]);
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
@@ -91,74 +116,16 @@ const AdminPayDefActPage = () => {
   const handleDelete = async (accountId) => {
     try {
       await deleteAccount(accountId);
-      // Refresh the accounts list after deletion
-      const response = await fetchAccounts(
-        search,
-        1,
-        1000,
-        searchBy,
-        sortBy,
-        order
-      );
-      setAllAccounts(response.data || []);
+      await loadAccounts();
     } catch (err) {
       console.error(err);
       setError(err.error || "Failed to delete account. Please try again.");
     }
   };
 
-  const filteredAccounts = allAccounts.filter((acc) => {
-    const term = search.toLowerCase();
-    if (searchBy === "all") {
-      return (
-        acc.code?.toLowerCase().includes(term) ||
-        acc.firstName?.toLowerCase().includes(term) ||
-        acc.lastName?.toLowerCase().includes(term) ||
-        acc.phoneNumber?.toLowerCase().includes(term) ||
-        acc.address?.toLowerCase().includes(term)
-      );
-    } else if (searchBy === "name") {
-      return `${acc.firstName} ${acc.lastName}`.toLowerCase().includes(term);
-    } else {
-      return acc[searchBy]?.toLowerCase().includes(term);
-    }
-  });
+  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
-  const startIndex = (page - 1) * ITEMS_PER_PAGE;
-  const paginatedAccounts = filteredAccounts.slice(
-    startIndex,
-    startIndex + ITEMS_PER_PAGE
-  );
-  const totalPages = Math.ceil(filteredAccounts.length / ITEMS_PER_PAGE);
-
-  const totalOutstanding = allAccounts.reduce(
-    (sum, acc) => sum + (acc.balance || 0),
-    0
-  );
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-8 w-[250px]" />
-        <div className="grid gap-6 md:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-[120px]" />
-          ))}
-        </div>
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-[60px]" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (error) {
+  if (error && !accounts.length && !loading) {
     return (
       <div className="p-6">
         <Card className="border-red-200 bg-red-50">
@@ -187,7 +154,9 @@ const AdminPayDefActPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{allAccounts.length}</div>
+            <div className="text-2xl font-bold">
+              {loading ? <Skeleton className="h-8 w-16" /> : total}
+            </div>
           </CardContent>
         </Card>
 
@@ -199,7 +168,11 @@ const AdminPayDefActPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ₹{totalOutstanding.toFixed(2)}
+              {loading ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                `₹${stats.totalOutstanding.toFixed(2)}`
+              )}
             </div>
           </CardContent>
         </Card>
@@ -212,7 +185,11 @@ const AdminPayDefActPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {allAccounts.filter((acc) => acc.balance > 0).length}
+              {loading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                stats.activeCount
+              )}
             </div>
           </CardContent>
         </Card>
@@ -225,7 +202,11 @@ const AdminPayDefActPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ₹{(totalOutstanding / Math.max(allAccounts.length, 1)).toFixed(2)}
+              {loading ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                `₹${stats.averageBalance.toFixed(2)}`
+              )}
             </div>
           </CardContent>
         </Card>
@@ -287,7 +268,7 @@ const AdminPayDefActPage = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="createdAt">Date Created</SelectItem>
-                <SelectItem value="totalOutstanding">Balance</SelectItem>
+                <SelectItem value="balance">Balance</SelectItem>
               </SelectContent>
             </Select>
 
@@ -327,7 +308,7 @@ const AdminPayDefActPage = () => {
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
-            ) : paginatedAccounts.length === 0 ? (
+            ) : accounts.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground">
                 No accounts found matching your search.
               </div>
@@ -344,7 +325,7 @@ const AdminPayDefActPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedAccounts.map((acc) => (
+                  {accounts.map((acc) => (
                     <TableRow key={acc._id} className="hover:bg-muted/50">
                       <TableCell
                         className="font-mono cursor-pointer"
